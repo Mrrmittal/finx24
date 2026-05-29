@@ -1,0 +1,22 @@
+-- Float Opening Balance entries
+-- These are inserted once at DB init
+
+-- Go Digit LI (GL: 8503595) — Opening balance as on 31-Mar-2025 = ₹10,13,063.36
+INSERT INTO FLOAT_GO_DIGIT_LI
+  (MONTH_LABEL, PERIOD_LABEL, FLOAT_TYPE, ACCOUNT_MANAGER, IMD_CODE,
+   TRANS_DATE, BOOKING_TYPE, TRANSACTION_DETAILS,
+   CREDIT_AMT, DEBIT_AMT, BALANCE, POLICY_NUMBER, LOAN_ID)
+VALUES
+  ('Mar''25', 'Opening Balance', 'AGENT_FLOAT', NULL, NULL,
+   '2025-03-31', 'Opening Balance', 'Opening balance as on 31-Mar-2025',
+   0.00, 0.00, 1013063.36, NULL, NULL);
+
+-- Kotak LI (GL: 8503598) — Opening balance as on 31-Mar-2026 = -₹10,530
+INSERT INTO FLOAT_KOTAK_LI
+  (MONTH_LABEL, PERIOD_LABEL, FLOAT_TYPE, ACCOUNT_MANAGER, IMD_CODE,
+   TRANS_DATE, BOOKING_TYPE, TRANSACTION_DETAILS,
+   CREDIT_AMT, DEBIT_AMT, BALANCE, POLICY_NUMBER, LOAN_ID)
+VALUES
+  ('Mar''26', 'Opening Balance', 'AGENT_FLOAT', NULL, NULL,
+   '2026-03-31', 'Opening Balance', 'Opening balance as on 31-Mar-2026',
+   0.00, 0.00, -10530.00, NULL, NULL);

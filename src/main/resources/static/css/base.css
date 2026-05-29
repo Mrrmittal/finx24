@@ -1,0 +1,135 @@
+/*
+ * ================================================================
+ * FinRecon Pro — NBFC Finance Suite
+ * ================================================================
+ * File        : css/base.css
+ * Description : CSS reset, design tokens (CSS variables),
+ *               typography scale and utility helper classes.
+ *               Import this first — all other sheets depend on it.
+ *
+ * Author      : Jatin Mittal
+ * Email       : jatin.mittal@cars24.com
+ * Version     : 1.0.0
+ * Created     : April 2024
+ * ================================================================
+ */
+
+/* ── Reset ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Design Tokens ── */
+:root {
+  --navy:        #0B1F3A;
+  --navy-mid:    #152E50;
+  --navy-lt:     #1E3F6B;
+  --gold:        #C8992A;
+  --gold-lt:     #E8B84B;
+  --gold-pale:   #F5E6B8;
+  --cream:       #FAF7F0;
+  --white:       #FFFFFF;
+
+  --green:       #2A7B4F;
+  --green-bg:    #EAF7EE;
+  --green-text:  #1B5C39;
+  --red:         #B23A3A;
+  --red-bg:      #FDEAEA;
+  --red-text:    #8B2121;
+  --amber:       #8A6010;
+  --amber-bg:    var(--gold-pale);
+  --amber-text:  var(--amber);
+
+  --text:        #0B1F3A;
+  --muted:       #5A6E88;
+  --border:      rgba(11, 31, 58, 0.12);
+  --border-mid:  rgba(11, 31, 58, 0.20);
+
+  --sidebar-w:   224px;
+  --topbar-h:    54px;
+  --content-pad: 24px;
+
+  --r-sm:  6px;
+  --r-md:  8px;
+  --r-lg:  10px;
+  --r-xl:  12px;
+
+  --t-fast: 0.15s ease;
+}
+
+/* ── Base ── */
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--cream);
+  min-height: 100vh;
+}
+
+/* ── Typography ── */
+h1, h2, h3 {
+  font-family: 'Playfair Display', serif;
+  font-weight: 500;
+  color: var(--navy);
+  line-height: 1.3;
+}
+h1 { font-size: 22px; }
+h2 { font-size: 18px; }
+h3 { font-size: 15px; }
+
+p { color: var(--text); font-size: 13px; line-height: 1.6; }
+
+/* ── Utilities ── */
+.text-muted  { color: var(--muted); }
+.text-gold   { color: var(--gold); }
+.text-green  { color: var(--green); }
+.text-red    { color: var(--red); }
+.text-navy   { color: var(--navy); }
+.fw-500      { font-weight: 500; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border-width: 0;
+}
+
+.hidden           { display: none !important; }
+.flex             { display: flex; }
+.flex-1           { flex: 1; }
+.items-center     { align-items: center; }
+.justify-between  { justify-content: space-between; }
+.flex-wrap        { flex-wrap: wrap; }
+.gap-8            { gap: 8px; }
+.gap-10           { gap: 10px; }
+.gap-12           { gap: 12px; }
+.mb-12            { margin-bottom: 12px; }
+.mb-16            { margin-bottom: 16px; }
+.mb-20            { margin-bottom: 20px; }
+
+
+/* ================================================================
+   Role-based content area color
+   Admin : warm cream (current default)
+   User  : softer cool white — easier on the eyes for read-only work
+================================================================ */
+body.role-admin .content {
+  background: #FAF8F4;  /* warm cream — admin */
+}
+body.role-user .content {
+  background: #F0F4F8;  /* soft cool white — user */
+}
+body.role-admin .main {
+  background: #FAF8F4;
+}
+body.role-user .main {
+  background: #F0F4F8;
+}

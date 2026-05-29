@@ -1,0 +1,84 @@
+/*
+ * ================================================================
+ * FinRecon Pro — NBFC Finance Suite
+ * ================================================================
+ * File        : css/pages.css
+ * Description : Page-specific styles that don't belong in the
+ *               shared component library. Covers the schedule hub
+ *               grid cards, accrual vs actualization summary grid,
+ *               disbursal chart wrapper and dashboard progress bars.
+ *               Depends on: base.css, components.css
+ *
+ * Author      : Jatin Mittal
+ * Email       : jatin.mittal@cars24.com
+ * Version     : 1.0.0
+ * Created     : April 2024
+ * ================================================================
+ */
+
+/* ── Schedule hub ── */
+.hub-period-bar {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 20px; padding: 12px 16px;
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+.hub-period-bar label { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; }
+.hub-period-bar .spacer { flex: 1; }
+.hub-period-bar .hub-summary { font-size: 11px; color: var(--muted); }
+
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 14px;
+}
+
+.hub-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl); padding: 18px 16px;
+  cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast);
+  position: relative; overflow: hidden;
+}
+.hub-card::after {
+  content: ''; position: absolute;
+  top: 0; left: 0; right: 0; height: 3px;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
+.hub-card.accent-navy::after   { background: var(--navy-lt); }
+.hub-card.accent-gold::after   { background: var(--gold); }
+.hub-card.accent-green::after  { background: var(--green); }
+.hub-card.accent-teal::after   { background: #1D9E75; }
+.hub-card.accent-purple::after { background: #534AB7; }
+.hub-card.accent-coral::after  { background: #D85A30; }
+.hub-card.accent-slate::after  { background: #3D5470; }
+.hub-card.accent-red::after    { background: var(--red); }
+.hub-card:hover { border-color: var(--gold); background: rgba(200,153,42,0.03); }
+
+.hub-card .hub-icon  { width: 38px; height: 38px; border-radius: 9px; background: var(--navy); display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+.hub-card .hub-name  { font-size: 13px; font-weight: 500; color: var(--navy); margin-bottom: 4px; line-height: 1.3; }
+.hub-card .hub-desc  { font-size: 11px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
+.hub-card .hub-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.hub-card .hub-arrow  { font-size: 16px; color: var(--gold); line-height: 1; }
+
+/* ── Accrual summary grid ── */
+.accrual-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin-bottom: 18px; }
+.accrual-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 14px; }
+.accrual-card.highlight { border-color: var(--gold); background: rgba(200,153,42,0.04); }
+.accrual-card .acc-head   { font-size: 10px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
+.accrual-card .acc-amount { font-size: 18px; font-weight: 500; color: var(--navy); margin-bottom: 2px; }
+.accrual-card .acc-label  { font-size: 11px; color: var(--muted); }
+.accrual-card .acc-variance { font-size: 12px; font-weight: 500; margin-top: 4px; }
+.accrual-card .acc-note   { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+
+/* ── Chart areas ── */
+.chart-area { position: relative; width: 100%; height: 220px; }
+
+/* ── Dashboard schedule progress ── */
+.sched-progress-list { margin-top: 4px; }
+.sched-progress-row  { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+.sched-progress-name { width: 170px; font-size: 12px; color: var(--text); flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sched-progress-bar-wrap { flex: 1; background: rgba(11,31,58,0.07); border-radius: 4px; height: 5px; overflow: hidden; }
+.sched-progress-bar-fill { height: 100%; border-radius: 4px; }
+.sched-progress-pct  { width: 32px; text-align: right; font-size: 11px; font-weight: 500; color: var(--muted); flex-shrink: 0; }
