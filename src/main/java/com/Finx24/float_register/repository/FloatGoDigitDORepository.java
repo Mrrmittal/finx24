@@ -2,6 +2,7 @@ package com.Finx24.float_register.repository;
 
 import com.Finx24.float_register.entity.FloatGoDigitDO;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.util.List;
 
@@ -14,13 +15,30 @@ public interface FloatGoDigitDORepository extends GenericFloatRepository<FloatGo
     @Query("SELECT DISTINCT r.periodLabel FROM FloatGoDigitDO r ORDER BY r.periodLabel ASC")
     List<String> findAvailablePeriods();
 
-    @Query("SELECT r.monthLabel, SUM(r.creditAmt), SUM(r.debitAmt), " +
-            "SUM(r.expense), MAX(r.balance) " +
-            "FROM FloatGoDigitDO r GROUP BY r.monthLabel ORDER BY r.monthLabel ASC")
+    /** All months summary — col[0]=month, [1]=topUp, [2]=cancelCredit, [3]=debit, [4]=closingBal */
+    @Query("SELECT r.monthLabel, " +
+           "SUM(CASE WHEN LOWER(r.bookingType) LIKE '%manual payment slip%' " +
+           "         OR LOWER(r.bookingType) LIKE '%online%' " +
+           "         THEN r.creditAmt ELSE 0 END), " +
+           "SUM(CASE WHEN LOWER(r.bookingType) NOT LIKE '%manual payment slip%' " +
+           "         AND LOWER(r.bookingType) NOT LIKE '%online%' " +
+           "         THEN r.creditAmt ELSE 0 END), " +
+           "SUM(r.debitAmt), MAX(r.balance) " +
+           "FROM FloatGoDigitDO r GROUP BY r.monthLabel ORDER BY r.monthLabel ASC")
     List<Object[]> findMonthSummary();
 
-    @Query("SELECT r.periodLabel, SUM(r.creditAmt), SUM(r.debitAmt), " +
-            "SUM(r.expense), MAX(r.balance) " +
-            "FROM FloatGoDigitDO r GROUP BY r.periodLabel ORDER BY r.periodLabel ASC")
+    /** Period summary by periodLabel */
+    @Query("SELECT r.periodLabel, " +
+           "SUM(CASE WHEN LOWER(r.bookingType) LIKE '%manual payment slip%' " +
+           "         OR LOWER(r.bookingType) LIKE '%online%' " +
+           "         THEN r.creditAmt ELSE 0 END), " +
+           "SUM(CASE WHEN LOWER(r.bookingType) NOT LIKE '%manual payment slip%' " +
+           "         AND LOWER(r.bookingType) NOT LIKE '%online%' " +
+           "         THEN r.creditAmt ELSE 0 END), " +
+           "SUM(r.debitAmt), MAX(r.balance) " +
+           "FROM FloatGoDigitDO r GROUP BY r.periodLabel ORDER BY r.periodLabel ASC")
     List<Object[]> findPeriodSummary();
+
+    /** Register rows for a specific month */
+    List<FloatGoDigitDO> findByMonthLabelOrderByTransDateAsc(String monthLabel);
 }

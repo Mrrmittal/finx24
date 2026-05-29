@@ -205,32 +205,32 @@ const API = (() => {
 
   // ── Float Register API ──────────────────────────────────────────
   const Float = {
-    upload: async function(file, category, partnerCode, period) {
+    upload: async function(file, partnerCode, period, overwrite) {
       const form = new FormData();
       form.append('file',        file);
-      form.append('category',    category);
       form.append('partnerCode', partnerCode);
       form.append('period',      period);
+      if (overwrite) form.append('overwrite', 'true');
       return upload('/float/upload', form);
     },
-    uploadMaster: async function(file, period) {
+    uploadMaster: async function(file, period, overwrite) {
       const form = new FormData();
       form.append('file',   file);
       form.append('period', period);
+      if (overwrite) form.append('overwrite', 'true');
       return upload('/float/upload-master', form);
     },
-    getRegister: async function(category, partner, period) {
-      let q = 'category=' + category;
-      if (partner) q += '&partner=' + encodeURIComponent(partner);
-      if (period)  q += '&period='  + encodeURIComponent(period);
+    getRegister: async function(partnerCode, month) {
+      var q = 'partnerCode=' + encodeURIComponent(partnerCode);
+      if (month) q += '&month=' + encodeURIComponent(month);
       return get('/float/register?' + q);
     },
     getPeriods: async function(category) {
       return get('/float/periods?category=' + category);
     },
-    getDashboard: async function(category, period) {
-      let q = 'category=' + category;
-      if (period) q += '&period=' + encodeURIComponent(period);
+    getDashboard: async function(partnerCode, month) {
+      var q = 'partnerCode=' + encodeURIComponent(partnerCode);
+      if (month) q += '&month=' + encodeURIComponent(month);
       return get('/float/dashboard?' + q);
     },
     getPartners: async function(category) {
@@ -245,4 +245,4 @@ const API = (() => {
     Auth, Admin, Recon, Disbursal, Float,
   };
 
-})();
+})();7

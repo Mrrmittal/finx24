@@ -41,7 +41,7 @@ public class FloatServiceImpl implements FloatService {
 
     // Month label formatter: "Apr'25"
     private static final DateTimeFormatter MONTH_FMT =
-            DateTimeFormatter.ofPattern("MMM''yy", java.util.Locale.ENGLISH);
+        DateTimeFormatter.ofPattern("MMM''yy", java.util.Locale.ENGLISH);
 
     // ================================================================
     //  UPLOAD
@@ -49,7 +49,7 @@ public class FloatServiceImpl implements FloatService {
     @Override
     @Transactional
     public Map<String, Object> upload(MultipartFile file, String partnerCode,
-                                      String periodLabel, boolean allowOverwrite)
+                                       String periodLabel, boolean allowOverwrite)
             throws IOException {
 
         Workbook wb = WorkbookFactory.create(file.getInputStream());
@@ -58,7 +58,7 @@ public class FloatServiceImpl implements FloatService {
         // Find header
         Row hdr = findHeaderRow(sheet);
         if (hdr == null) throw new IllegalArgumentException(
-                "Header row not found. Expected FLOAT_TYPE or TRANS_DATE column.");
+            "Header row not found. Expected FLOAT_TYPE or TRANS_DATE column.");
 
         Map<String, Integer> ci = buildColMap(hdr);
         ColMap cm = resolveColumns(ci);
@@ -72,9 +72,9 @@ public class FloatServiceImpl implements FloatService {
 
         // Date range of this file
         LocalDate minDate = dataRows.stream().filter(r -> r.transDate != null)
-                .map(r -> r.transDate).min(Comparator.naturalOrder()).orElse(null);
+            .map(r -> r.transDate).min(Comparator.naturalOrder()).orElse(null);
         LocalDate maxDate = dataRows.stream().filter(r -> r.transDate != null)
-                .map(r -> r.transDate).max(Comparator.naturalOrder()).orElse(null);
+            .map(r -> r.transDate).max(Comparator.naturalOrder()).orElse(null);
 
         // Duplicate check — any rows already exist for this date range?
         if (minDate != null && maxDate != null && !allowOverwrite) {
@@ -82,8 +82,8 @@ public class FloatServiceImpl implements FloatService {
             if (existing > 0) {
                 wb.close();
                 throw new IllegalStateException(
-                        "Data already exists for " + minDate + " to " + maxDate +
-                                " (" + existing + " rows). Use overwrite=true to replace.");
+                    "Data already exists for " + minDate + " to " + maxDate +
+                    " (" + existing + " rows). Use overwrite=true to replace.");
             }
         }
 
@@ -97,15 +97,15 @@ public class FloatServiceImpl implements FloatService {
         wb.close();
 
         log.info("[Float] Saved: partner={} period={} rows={} dates={} to {}",
-                partnerCode, periodLabel, saved, minDate, maxDate);
+            partnerCode, periodLabel, saved, minDate, maxDate);
 
         return Map.of(
-                "partnerCode", partnerCode,
-                "glAccount",   FloatConstants.getGl(partnerCode),
-                "periodLabel", periodLabel,
-                "inserted",    saved,
-                "dateFrom",    minDate != null ? minDate.toString() : "",
-                "dateTo",      maxDate != null ? maxDate.toString() : ""
+            "partnerCode", partnerCode,
+            "glAccount",   FloatConstants.getGl(partnerCode),
+            "periodLabel", periodLabel,
+            "inserted",    saved,
+            "dateFrom",    minDate != null ? minDate.toString() : "",
+            "dateTo",      maxDate != null ? maxDate.toString() : ""
         );
     }
 
@@ -115,8 +115,8 @@ public class FloatServiceImpl implements FloatService {
     @Override
     @Transactional
     public Map<String, Object> saveOpeningBalance(String partnerCode,
-                                                  LocalDate asOnDate,
-                                                  BigDecimal amount) {
+                                                   LocalDate asOnDate,
+                                                   BigDecimal amount) {
         // Opening balance row
         String monthLbl  = asOnDate.format(MONTH_FMT);
         String periodLbl = "Opening Balance";
@@ -134,7 +134,7 @@ public class FloatServiceImpl implements FloatService {
 
         dispatchSave(partnerCode, List.of(openRow));
         log.info("[Float] Opening balance saved: partner={} asOn={} amount={}",
-                partnerCode, asOnDate, amount);
+            partnerCode, asOnDate, amount);
         return Map.of("partnerCode", partnerCode, "asOnDate", asOnDate, "amount", amount);
     }
 
@@ -149,7 +149,7 @@ public class FloatServiceImpl implements FloatService {
 
             // Need at least a TRANS_DATE to be valid
             LocalDate transDate = cm.transDateIdx >= 0
-                    ? parseDate(cellStr(row.getCell(cm.transDateIdx))) : null;
+                ? parseDate(cellStr(row.getCell(cm.transDateIdx))) : null;
             if (transDate == null) continue;
 
             double credit  = cm.creditIdx  >= 0 ? numCell(row.getCell(cm.creditIdx))  : 0;
@@ -200,7 +200,7 @@ public class FloatServiceImpl implements FloatService {
     }
 
     private <T extends FloatRecord> int doSave(List<RowData> rows,
-                                               Supplier<T> factory, Consumer<List<T>> saveAll) {
+            Supplier<T> factory, Consumer<List<T>> saveAll) {
         List<T> entities = new ArrayList<>();
         for (RowData rd : rows) {
             T e = factory.get();
@@ -226,7 +226,7 @@ public class FloatServiceImpl implements FloatService {
     // ── Delete by date range ─────────────────────────────────────
     @Transactional
     protected void deleteByDateRange(String partnerCode, String periodLabel,
-                                     LocalDate from, LocalDate to) {
+                                      LocalDate from, LocalDate to) {
         // Delete rows whose transDate falls in range
         switch (partnerCode) {
             case "Go_Digit_LI"            -> goDigitLiRepo.deleteByPeriodLabel(periodLabel);
@@ -268,10 +268,10 @@ public class FloatServiceImpl implements FloatService {
         };
         final LocalDate f = from, t = to;
         return all.stream()
-                .filter(r -> r.getTransDate() != null
-                        && !r.getTransDate().isBefore(f)
-                        && !r.getTransDate().isAfter(t))
-                .count();
+            .filter(r -> r.getTransDate() != null
+                && !r.getTransDate().isBefore(f)
+                && !r.getTransDate().isAfter(t))
+            .count();
     }
 
     // ================================================================
@@ -279,8 +279,8 @@ public class FloatServiceImpl implements FloatService {
     // ================================================================
     @Override
     public List<Map<String, Object>> getRegister(String partnerCode,
-                                                 String monthOrPeriod,
-                                                 boolean byMonth) {
+                                                   String monthOrPeriod,
+                                                   boolean byMonth) {
         List<? extends FloatRecord> records;
         if (monthOrPeriod == null || monthOrPeriod.isBlank()) {
             records = switch (partnerCode) {
@@ -378,6 +378,7 @@ public class FloatServiceImpl implements FloatService {
     // ================================================================
     @Override
     public Map<String, Object> getDashboard(String partnerCode, String filter) {
+        // filter ignored — always return all months, frontend filters by period
         List<Object[]> rows = switch (partnerCode) {
             case "Go_Digit_LI"            -> goDigitLiRepo.findMonthSummary();
             case "Kotak_LI"               -> kotakLiRepo.findMonthSummary();
@@ -396,22 +397,26 @@ public class FloatServiceImpl implements FloatService {
             default -> List.of();
         };
 
+        // cols: [0]=monthLabel [1]=topUpCredit [2]=cancelCredit [3]=totalDebit [4]=closingBal
         List<Map<String,Object>> summary = new ArrayList<>();
         for (Object[] r : rows) {
-            if (filter != null && !filter.isBlank() && !filter.equals(r[0])) continue;
             Map<String,Object> m = new LinkedHashMap<>();
-            m.put("monthLabel",  r[0]);
-            m.put("totalCredit", r[1]);
-            m.put("totalDebit",  r[2]);
-            m.put("closingBal",  r[3]);
+            m.put("monthLabel",   r[0]);
+            m.put("topUpCredit",  r[1]);
+            m.put("cancelCredit", r[2]);
+            m.put("totalDebit",   r[3]);
+            double debit  = r[3] != null ? ((Number)r[3]).doubleValue() : 0;
+            double cancel = r[2] != null ? ((Number)r[2]).doubleValue() : 0;
+            m.put("expense",      debit - cancel);
+            m.put("closingBal",   r[4]);
             summary.add(m);
         }
         return Map.of(
-                "partnerCode", partnerCode,
-                "glAccount",   FloatConstants.getGl(partnerCode),
-                "parentGl",    FloatConstants.getParentGl(
-                        FloatConstants.CATEGORY.getOrDefault(partnerCode, "MI")),
-                "summary", summary
+            "partnerCode", partnerCode,
+            "glAccount",   FloatConstants.getGl(partnerCode),
+            "parentGl",    FloatConstants.getParentGl(
+                FloatConstants.CATEGORY.getOrDefault(partnerCode, "MI")),
+            "summary", summary
         );
     }
 
@@ -421,8 +426,8 @@ public class FloatServiceImpl implements FloatService {
     @Override
     @Transactional
     public Map<String, Object> uploadMaster(MultipartFile file,
-                                            String periodLabel,
-                                            boolean allowOverwrite) throws IOException {
+                                             String periodLabel,
+                                             boolean allowOverwrite) throws IOException {
         Workbook wb = WorkbookFactory.create(file.getInputStream());
         Map<String,Integer> results = new LinkedHashMap<>();
         int total = 0;
@@ -438,8 +443,8 @@ public class FloatServiceImpl implements FloatService {
                 List<RowData> rows = parseRows(sheet, hdr, cm, periodLabel);
                 if (!rows.isEmpty() && allowOverwrite) {
                     deleteByDateRange(partnerCode, periodLabel,
-                            rows.stream().map(r->r.transDate).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null),
-                            rows.stream().map(r->r.transDate).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null));
+                        rows.stream().map(r->r.transDate).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null),
+                        rows.stream().map(r->r.transDate).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null));
                 }
                 int saved = dispatchSave(partnerCode, rows);
                 results.put(e.getKey(), saved);
@@ -489,7 +494,7 @@ public class FloatServiceImpl implements FloatService {
 
     private Row findHeaderRow(Sheet sheet) {
         Set<String> keywords = Set.of("TRANS_DATE","Trans Date","FLOAT_TYPE",
-                "CREDIT_AMT","Credit Amount","Credit","BOOKING_TYPE");
+            "CREDIT_AMT","Credit Amount","Credit","BOOKING_TYPE");
         for (int i = 0; i <= Math.min(10, sheet.getLastRowNum()); i++) {
             Row r = sheet.getRow(i); if (r == null) continue;
             for (Cell c : r)
@@ -539,10 +544,10 @@ public class FloatServiceImpl implements FloatService {
         try { return switch (c.getCellType()) {
             case STRING  -> c.getStringCellValue().trim();
             case NUMERIC -> DateUtil.isCellDateFormatted(c)
-                    ? c.getLocalDateTimeCellValue().toLocalDate().toString()
-                    : String.valueOf(c.getNumericCellValue());
+                ? c.getLocalDateTimeCellValue().toLocalDate().toString()
+                : String.valueOf(c.getNumericCellValue());
             case FORMULA -> { try { yield String.valueOf(c.getNumericCellValue()); }
-            catch(Exception e){ yield c.getStringCellValue().trim(); } }
+                              catch(Exception e){ yield c.getStringCellValue().trim(); } }
             default -> "";
         }; } catch(Exception e) { return ""; }
     }
