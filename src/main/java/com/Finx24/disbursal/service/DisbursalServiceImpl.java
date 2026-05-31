@@ -86,9 +86,9 @@ public class DisbursalServiceImpl implements DisbursalService {
                     && disbDate.getMonthValue() != cancelDate.getMonthValue()
                     && disbDate.getYear()       != cancelDate.getYear()
                     || (cancelDate != null && disbDate != null && (
-                    disbDate.getYear()  < cancelDate.getYear() ||
-                            (disbDate.getYear() == cancelDate.getYear() && disbDate.getMonthValue() < cancelDate.getMonthValue())
-            ));
+                        disbDate.getYear()  < cancelDate.getYear() ||
+                        (disbDate.getYear() == cancelDate.getYear() && disbDate.getMonthValue() < cancelDate.getMonthValue())
+                    ));
 
             if (isOldMonthCancel && repo.existsById(loanId)) {
                 // Update existing record — add cancel date only
@@ -181,6 +181,7 @@ public class DisbursalServiceImpl implements DisbursalService {
             } else if (disbInPeriod && cancelInPeriod) {
                 // BUCKET 2: Same Period Cancel → 0 impact
                 sameMonthCnt++;
+                addDate(byDate, r.getDisbursementDate(), 0); // show in trend but 0 amount
 
             } else if (!disbInPeriod && cancelInPeriod) {
                 // BUCKET 3: Old Month Cancel → -ve
@@ -205,8 +206,8 @@ public class DisbursalServiceImpl implements DisbursalService {
         for (Map.Entry<String, long[]> e : byHpa.entrySet()) {
             String hpa  = e.getKey() != null ? e.getKey().toUpperCase().trim() : "";
             String book = hpa.equals("CARS24") ? "CARS24 Book"
-                    : hpa.equals("BAJAJ")  ? "Bajaj Colending"
-                      : "PMax Book";
+                        : hpa.equals("BAJAJ")  ? "Bajaj Colending"
+                        : "PMax Book";
             byLoanBook.get(book)[0] += e.getValue()[0];
             byLoanBook.get(book)[1] += e.getValue()[1];
         }
@@ -278,17 +279,17 @@ public class DisbursalServiceImpl implements DisbursalService {
     }
 
     private void buildExportSheet(XSSFWorkbook wb, String sheetName,
-                                  List<DisbursalRecord> records,
-                                  LocalDate from, LocalDate to) {
+                                   List<DisbursalRecord> records,
+                                   LocalDate from, LocalDate to) {
         XSSFSheet ws = wb.createSheet(sheetName);
         CellStyle hdrSt = hdrStyle(wb);
         CellStyle numSt = numStyle(wb);
         CellStyle txtSt = textStyle(wb);
 
         String[] headers = {"Loan ID","Customer","Vehicle No","Segment","Channel",
-                "HPA Status","Disb Date","Cancel Date","Loan Status","Status",
-                "City","State","Net Disbursal","Car Finance","Total Loan",
-                "Tenure","LI Charges","MI Charges","Insurance Plan"};
+            "HPA Status","Disb Date","Cancel Date","Loan Status","Status",
+            "City","State","Net Disbursal","Car Finance","Total Loan",
+            "Tenure","LI Charges","MI Charges","Insurance Plan"};
         Row hRow = ws.createRow(0);
         for (int i=0;i<headers.length;i++) { Cell c=hRow.createCell(i); c.setCellValue(headers[i]); c.setCellStyle(hdrSt); }
 
@@ -325,127 +326,127 @@ public class DisbursalServiceImpl implements DisbursalService {
     // =============================================================
     private DisbursalRecord buildRecord(Row row, Map<String, Integer> idx, String uploadedBy) {
         return DisbursalRecord.builder()
-                .loanApplicationId(str(row,idx,"LOAN_APPLICATION_ID"))
-                .customerName(str(row,idx,"CUSTOMER_NAME_01"))
-                .vehicleRegNo(str(row,idx,"VEHICLE_REGISTRATION_NUMBER"))
-                .segment(str(row,idx,"SEGMENT")).channel(str(row,idx,"CHANNEL"))
-                .hpaStatus(str(row,idx,"HPA_STATUS")).dealerCode(str(row,idx,"DEALER_CODE"))
-                .disbursementDate(date(row,idx,"DISBURSEMENT_DATE"))
-                .cancellationDate(
-                        date(row,idx,"CANCELLATION_DATE") != null
-                                ? date(row,idx,"CANCELLATION_DATE")
-                                : date(row,idx,"LOAN_CANCELLATION_DATE")
-                        // null stays null — no disbDate fallback
+            .loanApplicationId(str(row,idx,"LOAN_APPLICATION_ID"))
+            .customerName(str(row,idx,"CUSTOMER_NAME_01"))
+            .vehicleRegNo(str(row,idx,"VEHICLE_REGISTRATION_NUMBER"))
+            .segment(str(row,idx,"SEGMENT")).channel(str(row,idx,"CHANNEL"))
+            .hpaStatus(str(row,idx,"HPA_STATUS")).dealerCode(str(row,idx,"DEALER_CODE"))
+            .disbursementDate(date(row,idx,"DISBURSEMENT_DATE"))
+            .cancellationDate(
+                    date(row,idx,"CANCELLATION_DATE") != null
+                    ? date(row,idx,"CANCELLATION_DATE")
+                    : date(row,idx,"LOAN_CANCELLATION_DATE")
+                    // null stays null — no disbDate fallback
                 )
-                .loanStatus(str(row,idx,"LOAN_STATUS")).status(str(row,idx,"STATUS"))
-                .city(str(row,idx,"CITY")).pincode(str(row,idx,"PINCODE_01"))
-                .state(str(row,idx,"STATE")).cityCode(str(row,idx,"CITY_CODE")).stateCode(str(row,idx,"STATE_CODE"))
-                .totalLoanAmount(num(row,idx,"TOTAL_LOAN_AMOUNT"))
-                .carFinanceAmount(num(row,idx,"CAR_FINANCE_AMOUNT"))
-                .tenureMonths(intVal(row,idx,"TENNURE_IN_MONTHS"))
-                .interestRate(num(row,idx,"INTEREST_RATE"))
-                .netDisbursalAmount(num(row,idx,"NET_DISBURSAL_AMOUNT"))
-                .actualDisbursementAmount(num(row,idx,"ACTUAL_DISBURSEMENT_AMOUNT"))
-                .lfcActualDisbursementAmount(num(row,idx,"LFC_ACTUAL_DISBURSEMENT_AMOUNT"))
-                .directCreditAmount(num(row,idx,"DIRECTCREDITAMOUNT"))
-                .dfAmount(num(row,idx,"DF_AMOUNT")).drlNumber(str(row,idx,"DRL_NUMBER"))
-                .disbursementAmount(num(row,idx,"DISBURSEMENT AMOUNT"))
-                .loanCount(intVal(row,idx,"COUNT"))
-                .motorInsuranceType(str(row,idx,"MOTOR_INSURANCE_TYPE"))
-                .insurancePlan(str(row,idx,"INSURANCE_PLAN"))
-                .liCharges(num(row,idx,"LI_CHARGES")).miCharges(num(row,idx,"MI_CHARGES"))
-                .pocketInsuranceCharge(num(row,idx,"POCKET_INSURANCE_CHARGE"))
-                .bkawachCharges(num(row,idx,"BKAWACH_CHARGES"))
-                .cibilCharges(num(row,idx,"CIBIL_CHARGES"))
-                .documentationCharges(num(row,idx,"DOCUMENTATION_CHARGES"))
-                .stampCharges(num(row,idx,"STAMP_CHARGES"))
-                .rtoCharges(num(row,idx,"RTO_CHARGES"))
-                .valuationCharges(num(row,idx,"VALUATION_CHARGES"))
-                .chmCharges(num(row,idx,"CHM_CHARGES")).fwrCharges(num(row,idx,"FWR_CHARGES"))
-                .pfCharges(num(row,idx,"PF_CHARGES")).abcCharges(num(row,idx,"ABC_CHARGES"))
-                .ewCharges(num(row,idx,"EW_CHARGES")).amcCharges(num(row,idx,"AMC_CHARGES"))
-                .careplusCharges(num(row,idx,"CAREPLUS_CHARGES")).rsaCharges(num(row,idx,"RSA_CHARGES"))
-                .lffCharges(num(row,idx,"LFF_CHARGES")).btLfcCharges(num(row,idx,"BT_LFC_CHARGES"))
-                .protektCharges(num(row,idx,"PROTEKT_CHARGES"))
-                .protektProCharges(num(row,idx,"PROTEKT_PRO_CHARGES"))
-                .protektPlusCharges(num(row,idx,"PROTEKT_PLUS_CHARGES"))
-                .flexiPaymentFacilityCharge(num(row,idx,"FLEXI_PAYMENT_FACILITY_CHARGE"))
-                .buyerProtectionPlanCharge(num(row,idx,"BUYER_PROTECTION_PLAN_CHARGE"))
-                .lifetimeWarrantyCharge(num(row,idx,"LIFETIME_WARRANTY_CHARGE"))
-                .partyPeshiHoldback(num(row,idx,"PARTY_PESHI_HOLDBACK"))
-                .onlineChallanHoldback(num(row,idx,"ONLINE_CHALLAN_HOLDBACK"))
-                .nocHoldback(num(row,idx,"NOC_HOLDBACK"))
-                .motorInsuranceHoldback(num(row,idx,"MOTOR_INSURANCE_HOLDBACK"))
-                .rtoHoldback(num(row,idx,"RTO_HOLDBACK")).otherHoldback(num(row,idx,"OTHER_HOLDBACK"))
-                .offlineChallanHoldback(num(row,idx,"OFFLINE_CHALLAN_HOLDBACK"))
-                .partnerHoldback(num(row,idx,"PARTNER_HOLDBACK"))
-                .colendingLoanId(str(row,idx,"COLENDING_LOAN_ID")).colendingFlag(str(row,idx,"COLENDING_FLAG"))
-                .actualDisbAmount1(num(row,idx,"ACTUAL_DISBURSEMENT_AMOUNT_1"))
-                .actualDisbUtr1(str(row,idx,"ACTUAL_DISBURSEMENT_UTR_1"))
-                .actualDisbDate1(date(row,idx,"ACTUAL_DISBURSEMENT_DATE_1"))
-                .actualPayMode1(str(row,idx,"ACTUAL_PAYMENT_MODE_1"))
-                .actualPayStatus1(str(row,idx,"ACTUAL_PAYMENT_STATUS_1"))
-                .actualDisbAmount2(num(row,idx,"ACTUAL_DISBURSEMENT_AMOUNT_2"))
-                .actualDisbUtr2(str(row,idx,"ACTUAL_DISBURSEMENT_UTR_2"))
-                .actualDisbDate2(date(row,idx,"ACTUAL_DISBURSEMENT_DATE_2"))
-                .actualPayMode2(str(row,idx,"ACTUAL_PAYMENT_MODE_2"))
-                .actualPayStatus2(str(row,idx,"ACTUAL_PAYMENT_STATUS_2"))
-                .actualDisbAmount3(num(row,idx,"ACTUAL_DISBURSEMENT_AMOUNT_3"))
-                .actualDisbUtr3(str(row,idx,"ACTUAL_DISBURSEMENT_UTR_3"))
-                .actualDisbDate3(date(row,idx,"ACTUAL_DISBURSEMENT_DATE_3"))
-                .actualPayMode3(str(row,idx,"ACTUAL_PAYMENT_MODE_3"))
-                .actualDisbAmount4(num(row,idx,"ACTUAL_DISBURSEMENT_AMOUNT_4"))
-                .actualDisbUtr4(str(row,idx,"ACTUAL_DISBURSEMENT_UTR_4"))
-                .actualDisbDate4(date(row,idx,"ACTUAL_DISBURSEMENT_DATE_4"))
-                .actualPayMode4(str(row,idx,"ACTUAL_PAYMENT_MODE_4"))
-                .actualDisbAmount5(num(row,idx,"ACTUAL_DISBURSEMENT_AMOUNT_5"))
-                .actualDisbUtr5(str(row,idx,"ACTUAL_DISBURSEMENT_UTR_5"))
-                .actualDisbDate5(date(row,idx,"ACTUAL_DISBURSEMENT_DATE_5"))
-                .actualPayMode5(str(row,idx,"ACTUAL_PAYMENT_MODE_5"))
-                .lfcDisbAmount1(num(row,idx,"LFC_ACTUAL_DISBURSEMENT_AMOUNT_1"))
-                .lfcDisbUtr1(str(row,idx,"LFC_ACTUAL_DISBURSEMENT_UTR_1"))
-                .lfcDisbDate1(date(row,idx,"LFC_ACTUAL_DISBURSEMENT_DATE_1"))
-                .lfcPayMode1(str(row,idx,"LFC_ACTUAL_PAYMENT_MODE_1"))
-                .lfcPayStatus1(str(row,idx,"LFC_ACTUAL_PAYMENT_STATUS_1"))
-                .lfcDisbAmount2(num(row,idx,"LFC_ACTUAL_DISBURSEMENT_AMOUNT_2"))
-                .lfcDisbUtr2(str(row,idx,"LFC_ACTUAL_DISBURSEMENT_UTR_2"))
-                .lfcDisbDate2(date(row,idx,"LFC_ACTUAL_DISBURSEMENT_DATE_2"))
-                .lfcPayMode2(str(row,idx,"LFC_ACTUAL_PAYMENT_MODE_2"))
-                .lfcPayStatus2(str(row,idx,"LFC_ACTUAL_PAYMENT_STATUS_2"))
-                .lfcDisbAmount3(num(row,idx,"LFC_ACTUAL_DISBURSEMENT_AMOUNT_3"))
-                .lfcDisbUtr3(str(row,idx,"LFC_ACTUAL_DISBURSEMENT_UTR_3"))
-                .lfcDisbDate3(date(row,idx,"LFC_ACTUAL_DISBURSEMENT_DATE_3"))
-                .lfcPayMode3(str(row,idx,"LFC_ACTUAL_PAYMENT_MODE_3"))
-                .lfcDisbAmount4(num(row,idx,"LFC_ACTUAL_DISBURSEMENT_AMOUNT_4"))
-                .lfcDisbUtr4(str(row,idx,"LFC_ACTUAL_DISBURSEMENT_UTR_4"))
-                .lfcDisbDate4(date(row,idx,"LFC_ACTUAL_DISBURSEMENT_DATE_4"))
-                .lfcPayMode4(str(row,idx,"LFC_ACTUAL_PAYMENT_MODE_4"))
-                .pMaxSheetTimestamp(str(row,idx,"P_MAX_SHEET_TIMESTAMP"))
-                .pMaxEmailAddress(str(row,idx,"P_MAX_EMAIL_ADDRESS"))
-                .pMaxVehicleNumber(str(row,idx,"P_MAX_VEHICLE_NUMBER"))
-                .pMaxCarFinanceAmount(num(row,idx,"P_MAX_CAR_FINANCE_AMOUNT"))
-                .pmaxxTotalCharges(num(row,idx,"PMAXX_TOTAL_CHARGES"))
-                .pmaxxSuraksha(num(row,idx,"PMAXX_SURAKSHA"))
-                .pmaxxMi(num(row,idx,"PMAXX_MI"))
-                .pmaxxOtherCharges(num(row,idx,"PMAXX_OTHER_CHARGES"))
-                .pmaxxPfDocumentsCharges(num(row,idx,"PMAXX_PF_DOCUMENTS_CHARGES"))
-                .pMaxSubfinancer(str(row,idx,"P_MAX_SUBFINANCER"))
-                .pennantDisbursalDate(date(row,idx,"PENNANT_DISBURSAL_DATE"))
-                .pennantFirstEmiAmount(num(row,idx,"PENNANT_FIRST_EMI_AMOUNT"))
-                .pennantFirstEmiDate(date(row,idx,"PENNANT_FIRST_EMI_DATE"))
-                .pennantEmiAmount(num(row,idx,"PENNANT_EMI_AMOUNT"))
-                .amountCheckFlag(str(row,idx,"AMOUNT_CHECK_FLAG"))
-                .accountingFlag(str(row,idx,"ACCOUNTING_FLAG"))
-                .uploadedBy(uploadedBy)
-                .uploadedAt(LocalDateTime.now())
-                .build();
+            .loanStatus(str(row,idx,"LOAN_STATUS")).status(str(row,idx,"STATUS"))
+            .city(str(row,idx,"CITY")).pincode(str(row,idx,"PINCODE_01"))
+            .state(str(row,idx,"STATE")).cityCode(str(row,idx,"CITY_CODE")).stateCode(str(row,idx,"STATE_CODE"))
+            .totalLoanAmount(num(row,idx,"TOTAL_LOAN_AMOUNT"))
+            .carFinanceAmount(num(row,idx,"CAR_FINANCE_AMOUNT"))
+            .tenureMonths(intVal(row,idx,"TENNURE_IN_MONTHS"))
+            .interestRate(num(row,idx,"INTEREST_RATE"))
+            .netDisbursalAmount(num(row,idx,"NET_DISBURSAL_AMOUNT"))
+            .actualDisbursementAmount(num(row,idx,"ACTUAL_DISBURSEMENT_AMOUNT"))
+            .lfcActualDisbursementAmount(num(row,idx,"LFC_ACTUAL_DISBURSEMENT_AMOUNT"))
+            .directCreditAmount(num(row,idx,"DIRECTCREDITAMOUNT"))
+            .dfAmount(num(row,idx,"DF_AMOUNT")).drlNumber(str(row,idx,"DRL_NUMBER"))
+            .disbursementAmount(num(row,idx,"DISBURSEMENT AMOUNT"))
+            .loanCount(intVal(row,idx,"COUNT"))
+            .motorInsuranceType(str(row,idx,"MOTOR_INSURANCE_TYPE"))
+            .insurancePlan(str(row,idx,"INSURANCE_PLAN"))
+            .liCharges(num(row,idx,"LI_CHARGES")).miCharges(num(row,idx,"MI_CHARGES"))
+            .pocketInsuranceCharge(num(row,idx,"POCKET_INSURANCE_CHARGE"))
+            .bkawachCharges(num(row,idx,"BKAWACH_CHARGES"))
+            .cibilCharges(num(row,idx,"CIBIL_CHARGES"))
+            .documentationCharges(num(row,idx,"DOCUMENTATION_CHARGES"))
+            .stampCharges(num(row,idx,"STAMP_CHARGES"))
+            .rtoCharges(num(row,idx,"RTO_CHARGES"))
+            .valuationCharges(num(row,idx,"VALUATION_CHARGES"))
+            .chmCharges(num(row,idx,"CHM_CHARGES")).fwrCharges(num(row,idx,"FWR_CHARGES"))
+            .pfCharges(num(row,idx,"PF_CHARGES")).abcCharges(num(row,idx,"ABC_CHARGES"))
+            .ewCharges(num(row,idx,"EW_CHARGES")).amcCharges(num(row,idx,"AMC_CHARGES"))
+            .careplusCharges(num(row,idx,"CAREPLUS_CHARGES")).rsaCharges(num(row,idx,"RSA_CHARGES"))
+            .lffCharges(num(row,idx,"LFF_CHARGES")).btLfcCharges(num(row,idx,"BT_LFC_CHARGES"))
+            .protektCharges(num(row,idx,"PROTEKT_CHARGES"))
+            .protektProCharges(num(row,idx,"PROTEKT_PRO_CHARGES"))
+            .protektPlusCharges(num(row,idx,"PROTEKT_PLUS_CHARGES"))
+            .flexiPaymentFacilityCharge(num(row,idx,"FLEXI_PAYMENT_FACILITY_CHARGE"))
+            .buyerProtectionPlanCharge(num(row,idx,"BUYER_PROTECTION_PLAN_CHARGE"))
+            .lifetimeWarrantyCharge(num(row,idx,"LIFETIME_WARRANTY_CHARGE"))
+            .partyPeshiHoldback(num(row,idx,"PARTY_PESHI_HOLDBACK"))
+            .onlineChallanHoldback(num(row,idx,"ONLINE_CHALLAN_HOLDBACK"))
+            .nocHoldback(num(row,idx,"NOC_HOLDBACK"))
+            .motorInsuranceHoldback(num(row,idx,"MOTOR_INSURANCE_HOLDBACK"))
+            .rtoHoldback(num(row,idx,"RTO_HOLDBACK")).otherHoldback(num(row,idx,"OTHER_HOLDBACK"))
+            .offlineChallanHoldback(num(row,idx,"OFFLINE_CHALLAN_HOLDBACK"))
+            .partnerHoldback(num(row,idx,"PARTNER_HOLDBACK"))
+            .colendingLoanId(str(row,idx,"COLENDING_LOAN_ID")).colendingFlag(str(row,idx,"COLENDING_FLAG"))
+            .actualDisbAmount1(num(row,idx,"ACTUAL_DISBURSEMENT_AMOUNT_1"))
+            .actualDisbUtr1(str(row,idx,"ACTUAL_DISBURSEMENT_UTR_1"))
+            .actualDisbDate1(date(row,idx,"ACTUAL_DISBURSEMENT_DATE_1"))
+            .actualPayMode1(str(row,idx,"ACTUAL_PAYMENT_MODE_1"))
+            .actualPayStatus1(str(row,idx,"ACTUAL_PAYMENT_STATUS_1"))
+            .actualDisbAmount2(num(row,idx,"ACTUAL_DISBURSEMENT_AMOUNT_2"))
+            .actualDisbUtr2(str(row,idx,"ACTUAL_DISBURSEMENT_UTR_2"))
+            .actualDisbDate2(date(row,idx,"ACTUAL_DISBURSEMENT_DATE_2"))
+            .actualPayMode2(str(row,idx,"ACTUAL_PAYMENT_MODE_2"))
+            .actualPayStatus2(str(row,idx,"ACTUAL_PAYMENT_STATUS_2"))
+            .actualDisbAmount3(num(row,idx,"ACTUAL_DISBURSEMENT_AMOUNT_3"))
+            .actualDisbUtr3(str(row,idx,"ACTUAL_DISBURSEMENT_UTR_3"))
+            .actualDisbDate3(date(row,idx,"ACTUAL_DISBURSEMENT_DATE_3"))
+            .actualPayMode3(str(row,idx,"ACTUAL_PAYMENT_MODE_3"))
+            .actualDisbAmount4(num(row,idx,"ACTUAL_DISBURSEMENT_AMOUNT_4"))
+            .actualDisbUtr4(str(row,idx,"ACTUAL_DISBURSEMENT_UTR_4"))
+            .actualDisbDate4(date(row,idx,"ACTUAL_DISBURSEMENT_DATE_4"))
+            .actualPayMode4(str(row,idx,"ACTUAL_PAYMENT_MODE_4"))
+            .actualDisbAmount5(num(row,idx,"ACTUAL_DISBURSEMENT_AMOUNT_5"))
+            .actualDisbUtr5(str(row,idx,"ACTUAL_DISBURSEMENT_UTR_5"))
+            .actualDisbDate5(date(row,idx,"ACTUAL_DISBURSEMENT_DATE_5"))
+            .actualPayMode5(str(row,idx,"ACTUAL_PAYMENT_MODE_5"))
+            .lfcDisbAmount1(num(row,idx,"LFC_ACTUAL_DISBURSEMENT_AMOUNT_1"))
+            .lfcDisbUtr1(str(row,idx,"LFC_ACTUAL_DISBURSEMENT_UTR_1"))
+            .lfcDisbDate1(date(row,idx,"LFC_ACTUAL_DISBURSEMENT_DATE_1"))
+            .lfcPayMode1(str(row,idx,"LFC_ACTUAL_PAYMENT_MODE_1"))
+            .lfcPayStatus1(str(row,idx,"LFC_ACTUAL_PAYMENT_STATUS_1"))
+            .lfcDisbAmount2(num(row,idx,"LFC_ACTUAL_DISBURSEMENT_AMOUNT_2"))
+            .lfcDisbUtr2(str(row,idx,"LFC_ACTUAL_DISBURSEMENT_UTR_2"))
+            .lfcDisbDate2(date(row,idx,"LFC_ACTUAL_DISBURSEMENT_DATE_2"))
+            .lfcPayMode2(str(row,idx,"LFC_ACTUAL_PAYMENT_MODE_2"))
+            .lfcPayStatus2(str(row,idx,"LFC_ACTUAL_PAYMENT_STATUS_2"))
+            .lfcDisbAmount3(num(row,idx,"LFC_ACTUAL_DISBURSEMENT_AMOUNT_3"))
+            .lfcDisbUtr3(str(row,idx,"LFC_ACTUAL_DISBURSEMENT_UTR_3"))
+            .lfcDisbDate3(date(row,idx,"LFC_ACTUAL_DISBURSEMENT_DATE_3"))
+            .lfcPayMode3(str(row,idx,"LFC_ACTUAL_PAYMENT_MODE_3"))
+            .lfcDisbAmount4(num(row,idx,"LFC_ACTUAL_DISBURSEMENT_AMOUNT_4"))
+            .lfcDisbUtr4(str(row,idx,"LFC_ACTUAL_DISBURSEMENT_UTR_4"))
+            .lfcDisbDate4(date(row,idx,"LFC_ACTUAL_DISBURSEMENT_DATE_4"))
+            .lfcPayMode4(str(row,idx,"LFC_ACTUAL_PAYMENT_MODE_4"))
+            .pMaxSheetTimestamp(str(row,idx,"P_MAX_SHEET_TIMESTAMP"))
+            .pMaxEmailAddress(str(row,idx,"P_MAX_EMAIL_ADDRESS"))
+            .pMaxVehicleNumber(str(row,idx,"P_MAX_VEHICLE_NUMBER"))
+            .pMaxCarFinanceAmount(num(row,idx,"P_MAX_CAR_FINANCE_AMOUNT"))
+            .pmaxxTotalCharges(num(row,idx,"PMAXX_TOTAL_CHARGES"))
+            .pmaxxSuraksha(num(row,idx,"PMAXX_SURAKSHA"))
+            .pmaxxMi(num(row,idx,"PMAXX_MI"))
+            .pmaxxOtherCharges(num(row,idx,"PMAXX_OTHER_CHARGES"))
+            .pmaxxPfDocumentsCharges(num(row,idx,"PMAXX_PF_DOCUMENTS_CHARGES"))
+            .pMaxSubfinancer(str(row,idx,"P_MAX_SUBFINANCER"))
+            .pennantDisbursalDate(date(row,idx,"PENNANT_DISBURSAL_DATE"))
+            .pennantFirstEmiAmount(num(row,idx,"PENNANT_FIRST_EMI_AMOUNT"))
+            .pennantFirstEmiDate(date(row,idx,"PENNANT_FIRST_EMI_DATE"))
+            .pennantEmiAmount(num(row,idx,"PENNANT_EMI_AMOUNT"))
+            .amountCheckFlag(str(row,idx,"AMOUNT_CHECK_FLAG"))
+            .accountingFlag(str(row,idx,"ACCOUNTING_FLAG"))
+            .uploadedBy(uploadedBy)
+            .uploadedAt(LocalDateTime.now())
+            .build();
     }
 
     // =============================================================
     //  PRIVATE — Excel builders
     // =============================================================
     private void buildRawSheet(XSSFWorkbook wb, List<DisbursalRecord> records,
-                               LocalDate from, LocalDate to) {
+                                LocalDate from, LocalDate to) {
         XSSFSheet ws = wb.createSheet("Raw Data");
         CellStyle hs = hdrStyle(wb), ns = numStyle(wb), ts = textStyle(wb);
         CellStyle red = colorRow(wb,"FFE0E0"), grn = colorRow(wb,"D9F0D9"), amb = colorRow(wb,"FFF2CC");
@@ -457,9 +458,9 @@ public class DisbursalServiceImpl implements DisbursalService {
         ws.getRow(0).setHeight((short)(35*20));
 
         String[] headers = {"Loan ID","Customer","Vehicle No","Segment","Channel",
-                "HPA Status","Disb Date","Cancel Date","Loan Status","Status",
-                "City","State","Net Disbursal","Car Finance","Total Loan",
-                "Tenure","LI Charges","MI Charges","Pocket Ins","Colending"};
+            "HPA Status","Disb Date","Cancel Date","Loan Status","Status",
+            "City","State","Net Disbursal","Car Finance","Total Loan",
+            "Tenure","LI Charges","MI Charges","Pocket Ins","Colending"};
         Row hr = ws.createRow(1); hr.setHeight((short)(25*20));
         for (int i=0;i<headers.length;i++) { Cell c=hr.createCell(i); c.setCellValue(headers[i]); c.setCellStyle(hs); }
 
@@ -487,7 +488,7 @@ public class DisbursalServiceImpl implements DisbursalService {
     }
 
     private void buildSummarySheet(XSSFWorkbook wb, DisbursalDashboardResponse d,
-                                   LocalDate from, LocalDate to) {
+                                    LocalDate from, LocalDate to) {
         XSSFSheet ws = wb.createSheet("Summary Dashboard");
         ws.setColumnWidth(0,8000); ws.setColumnWidth(1,5000);
         CellStyle ts=titleStyle(wb), hs=hdrStyle(wb), ns=numStyle(wb);
@@ -496,14 +497,14 @@ public class DisbursalServiceImpl implements DisbursalService {
         Cell t = ws.createRow(r++).createCell(0);
         t.setCellValue("Disbursal Dashboard — " + from + " to " + to); t.setCellStyle(ts); r++;
         String[][] kpis = {
-                {"Net Loan Count",          String.valueOf(d.getNetLoanCount())},
-                {"Active Loans",            String.valueOf(d.getActiveLoans())},
-                {"Same Month Cancellations",String.valueOf(d.getSameMonthCancellations())},
-                {"Old Month Cancellations", String.valueOf(d.getOldMonthCancellations())},
-                {"Net Disbursal Amount",    "₹"+fmt(d.getNetDisbursalAmount())},
-                {"LI Charges (Net)",        "₹"+fmt(d.getLiCharges())+" [Active − OldCancel]"},
-                {"MI Charges (Net)",        "₹"+fmt(d.getMiCharges())+" [Active − OldCancel]"},
-                {"Cancelled Amount (−)",    "₹"+fmt(d.getCancelledAmount())},
+            {"Net Loan Count",          String.valueOf(d.getNetLoanCount())},
+            {"Active Loans",            String.valueOf(d.getActiveLoans())},
+            {"Same Month Cancellations",String.valueOf(d.getSameMonthCancellations())},
+            {"Old Month Cancellations", String.valueOf(d.getOldMonthCancellations())},
+            {"Net Disbursal Amount",    "₹"+fmt(d.getNetDisbursalAmount())},
+            {"LI Charges (Net)",        "₹"+fmt(d.getLiCharges())+" [Active − OldCancel]"},
+            {"MI Charges (Net)",        "₹"+fmt(d.getMiCharges())+" [Active − OldCancel]"},
+            {"Cancelled Amount (−)",    "₹"+fmt(d.getCancelledAmount())},
         };
         Row kh=ws.createRow(r++);
         kh.createCell(0).setCellValue("KPI"); kh.getCell(0).setCellStyle(hs);
@@ -543,8 +544,8 @@ public class DisbursalServiceImpl implements DisbursalService {
             }
             case BOOLEAN -> String.valueOf(c.getBooleanCellValue());
             case FORMULA -> { try { yield c.getStringCellValue().trim(); }
-            catch (Exception e) { try { yield String.valueOf((long)c.getNumericCellValue()); }
-            catch (Exception e2) { yield ""; } } }
+                catch (Exception e) { try { yield String.valueOf((long)c.getNumericCellValue()); }
+                catch (Exception e2) { yield ""; } } }
             default -> "";
         };
     }
@@ -625,4 +626,36 @@ public class DisbursalServiceImpl implements DisbursalService {
     private CellStyle numStyle(XSSFWorkbook wb){CellStyle s=wb.createCellStyle();s.setDataFormat(wb.createDataFormat().getFormat("#,##0.00"));s.setAlignment(HorizontalAlignment.RIGHT);return s;}
     private CellStyle textStyle(XSSFWorkbook wb){CellStyle s=wb.createCellStyle();s.setVerticalAlignment(VerticalAlignment.CENTER);return s;}
     private CellStyle colorRow(XSSFWorkbook wb,String hex){CellStyle s=wb.createCellStyle();byte[] rgb=new byte[]{(byte)Integer.parseInt(hex.substring(0,2),16),(byte)Integer.parseInt(hex.substring(2,4),16),(byte)Integer.parseInt(hex.substring(4,6),16)};s.setFillForegroundColor(new XSSFColor(rgb,null));s.setFillPattern(FillPatternType.SOLID_FOREGROUND);return s;}
+
+    @Override
+    public List<Map<String,Object>> getAllForRecon() {
+        // Fetch ALL records from DB — no date filter
+        // Used by LI recon to replace SAP HANA file + Monthly DR file
+        List<DisbursalRecord> all = repo.findAll();
+        List<Map<String,Object>> result = new ArrayList<>();
+
+        for (DisbursalRecord r : all) {
+            Map<String,Object> m = new LinkedHashMap<>();
+            // SAP HANA equivalent fields
+            m.put("loanApplicationId",  r.getLoanApplicationId());
+            m.put("liCharges",          r.getLiCharges());
+            m.put("disbursementDate",   r.getDisbursementDate() != null
+                                            ? r.getDisbursementDate().toString() : "");
+            // Loan Status equivalent (from monthly DR)
+            m.put("loanStatus",         r.getLoanStatus() != null
+                                            ? r.getLoanStatus() : "");
+            m.put("cancellationDate",   r.getCancellationDate() != null
+                                            ? r.getCancellationDate().toString() : "");
+            // Extra fields useful for recon
+            m.put("vehicleRegNo",       nvl(r.getVehicleRegNo()));
+            m.put("channel",            nvl(r.getChannel()));
+            m.put("segment",            nvl(r.getSegment()));
+            m.put("customerName",       nvl(r.getCustomerName()));
+            result.add(m);
+        }
+        log.info("[Disbursal] getAllForRecon: {} records", result.size());
+        return result;
+    }
+
+    private String nvl(String s) { return s != null ? s : ""; }
 }

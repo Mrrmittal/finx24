@@ -1,5 +1,8 @@
 /**
  * FinRecon Pro — Loan Insurance Schedule Page
+ * @author  Jatin Mittal
+ * @contact jatin.mittal@cars24.com | +91-8221944248
+ * @company CARS24 Financial Services Pvt. Ltd. (CFSPL)
  */
 
 Router.register('li-schedule', function(panel) {
@@ -377,14 +380,14 @@ Router.register('li-schedule', function(panel) {
             var grid = document.getElementById('li-kpi-grid');
             if (grid) {
                 grid.innerHTML = kpis.map(function(k) {
-                    return '<div style="background:#fff;border-radius:10px;padding:16px;'
+                    return '<div style="background:#fff;border-radius:8px;padding:12px 14px;'
                         + 'border:1.5px solid rgba(11,31,58,0.08);'
-                        + 'border-top:3px solid '+k.clr+';'
-                        + 'box-shadow:0 1px 4px rgba(0,0,0,0.05)">'
-                        + '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.8px;'
-                        +   'color:#5A6E88;margin-bottom:6px">'+k.label+'</div>'
-                        + '<div style="font-size:20px;font-weight:600;color:#0B1F3A">'+k.value+'</div>'
-                        + '<div style="font-size:9px;color:#9AA5B4;margin-top:4px">'+k.sub+'</div>'
+                        + 'border-top:2px solid '+k.clr+';'
+                        + 'box-shadow:0 1px 3px rgba(0,0,0,0.04)">'
+                        + '<div style="font-size:8.5px;text-transform:uppercase;letter-spacing:.7px;'
+                        +   'color:#5A6E88;margin-bottom:4px">'+k.label+'</div>'
+                        + '<div style="font-size:16px;font-weight:600;color:#0B1F3A">'+k.value+'</div>'
+                        + '<div style="font-size:8.5px;color:#9AA5B4;margin-top:3px">'+k.sub+'</div>'
                         + '</div>';
                 }).join('');
             }

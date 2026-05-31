@@ -133,46 +133,21 @@ const API = (() => {
   // ================================================================
   const Recon = {
 
-    // ── Loan Insurance ────────────────────────────────────────────
-    async runLoanIns({ floatFile, prFiles, hanaFile, monthlyDRFiles,
-                       monthLabel, reconMode, rangeStart, rangeEnd }) {
-      const form = new FormData();
-      form.append('floatFile', floatFile);
-      prFiles.forEach(f         => form.append('prFiles',        f));
-      if (hanaFile)              form.append('hanaFile',         hanaFile);
-      if (monthlyDRFiles?.length)
-        monthlyDRFiles.forEach(f => form.append('monthlyDRFiles', f));
-      form.append('monthLabel',  monthLabel);
-      form.append('reconMode',   reconMode  || 'month');
-      if (rangeStart) form.append('rangeStart', rangeStart);
-      if (rangeEnd)   form.append('rangeEnd',   rangeEnd);
-      return upload('/recon/loan-insurance/run', form);
-    },
+    // ── NOTE ──────────────────────────────────────────────────────
+    // LI and MI recon logic runs 100% client-side (page.recon-li.js,
+    // page.recon-mi.js). Files are processed via SheetJS in the browser.
+    // DB data (SAP HANA equivalent + Loan Status) via:
+    //   API.Disbursal.getReconData()  →  GET /disbursal/recon-data
+    //
+    // These endpoints are kept for future backend migration if needed.
+    // ─────────────────────────────────────────────────────────────
 
-    downloadLoanIns(reconId) {
-      // Direct browser download — attach token via URL param (one-time)
-      window.open(`${BASE_URL}/recon/loan-insurance/download/${reconId}
-        ?token=${getToken()}`);
-    },
-
+    // ── Loan Insurance (future use) ───────────────────────────────
     getLoanInsHistory: (page = 0, size = 10) =>
         get(`/recon/loan-insurance/history?page=${page}&size=${size}`),
 
-    // ── Motor Insurance ───────────────────────────────────────────
-    async runMotor({ floatFile, monthLabel, prFiles, hanaFile, monthlyDRFiles,
-                     selfFile, insMasterFile, fulfilFile, dcfFile }) {
-      const form = new FormData();
-      form.append('floatFile',  floatFile);
-      form.append('monthLabel', monthLabel);
-      prFiles?.forEach(f => form.append('prFiles', f));
-      if (hanaFile)       form.append('hanaFile',       hanaFile);
-      if (selfFile)       form.append('selfFile',       selfFile);
-      if (insMasterFile)  form.append('insMasterFile',  insMasterFile);
-      if (fulfilFile)     form.append('fulfilFile',     fulfilFile);
-      if (dcfFile)        form.append('dcfFile',        dcfFile);
-      monthlyDRFiles?.forEach(f => form.append('monthlyDRFiles', f));
-      return upload('/recon/motor/run', form);
-    },
+    // ── Motor Insurance (future use) ─────────────────────────────
+    // placeholder
 
     // ── Bank Recon ────────────────────────────────────────────────
     async runBank({ ledgerFile, bankFile }) {
@@ -202,6 +177,10 @@ const API = (() => {
     // User: get available months for calendar
     getAvailableMonths: () =>
         get('/disbursal/available-months'),
+
+    // LI Recon: get all records from DB (replaces SAP HANA + Monthly DR uploads)
+    getReconData: () =>
+        get('/disbursal/recon-data'),
 
     // User: export Excel (opens download)
     exportExcel(from, to) {

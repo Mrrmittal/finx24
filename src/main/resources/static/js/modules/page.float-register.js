@@ -1,6 +1,9 @@
 /**
  * FINX24 — Float Register
  * Period-range dashboard | Auto-load register | Bank statement
+ * @author  Jatin Mittal
+ * @contact jatin.mittal@cars24.com | +91-8221944248
+ * @company CARS24 Financial Services Pvt. Ltd. (CFSPL)
  */
 Router.register('float-register', function(panel) {
 

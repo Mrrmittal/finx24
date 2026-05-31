@@ -3,6 +3,9 @@
  * FinRecon Pro — NBFC Finance Suite
  * File    : js/modules/page.dashboard.js
  * ================================================================
+ * @author  Jatin Mittal
+ * @contact jatin.mittal@cars24.com | +91-8221944248
+ * @company CARS24 Financial Services Pvt. Ltd. (CFSPL)
  */
 
 Router.register('dashboard', function(panel) {

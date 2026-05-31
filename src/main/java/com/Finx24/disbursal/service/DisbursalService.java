@@ -22,4 +22,7 @@ public interface DisbursalService {
     List<Map<String, Object>> getAvailableMonths();
 
     byte[] exportExcel(LocalDate from, LocalDate to) throws IOException;
+
+    /** All records for LI recon — replaces SAP HANA + Monthly DR file uploads */
+    List<Map<String,Object>> getAllForRecon();
 }

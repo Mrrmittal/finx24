@@ -2,6 +2,9 @@
  * FinRecon Pro — Disbursal Report Page
  * ADMIN : Upload Excel → DB + Dashboard + Export
  * USER  : Period picker + Dashboard + Export
+ * @author  Jatin Mittal
+ * @contact jatin.mittal@cars24.com | +91-8221944248
+ * @company CARS24 Financial Services Pvt. Ltd. (CFSPL)
  */
 
 Router.register('disbursal', function(panel) {

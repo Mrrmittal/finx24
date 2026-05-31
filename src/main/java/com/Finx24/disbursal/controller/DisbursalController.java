@@ -13,7 +13,6 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -35,9 +34,8 @@ public class DisbursalController {
     //  ADMIN ONLY — Upload disbursal report to database
     // ─────────────────────────────────────────────────────────────
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "[ADMIN] Upload disbursal report Excel to database",
-            description = "UPSERT by LOAN_APPLICATION_ID. Old Month Cancellations update existing records.")
+               description = "UPSERT by LOAN_APPLICATION_ID. Old Month Cancellations update existing records.")
     public ResponseEntity<ApiResponse<DisbursalUploadResponse>> upload(
             @RequestPart("file") MultipartFile file,
             Authentication auth
@@ -60,9 +58,8 @@ public class DisbursalController {
     //  USER + ADMIN — Dashboard with period filter
     // ─────────────────────────────────────────────────────────────
     @GetMapping("/dashboard")
-    @PreAuthorize("hasAnyRole('USER','ADMIN')")
     @Operation(summary = "Get disbursal dashboard for a period",
-            description = "3-bucket logic: Active=+ve, SameMonth=0, OldMonth=-ve")
+               description = "3-bucket logic: Active=+ve, SameMonth=0, OldMonth=-ve")
     public ResponseEntity<ApiResponse<DisbursalDashboardResponse>> dashboard(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
@@ -76,9 +73,8 @@ public class DisbursalController {
     //  USER + ADMIN — Export formatted Excel
     // ─────────────────────────────────────────────────────────────
     @GetMapping("/export")
-    @PreAuthorize("hasAnyRole('USER','ADMIN')")
     @Operation(summary = "Export disbursal data as formatted Excel",
-            description = "Returns Raw Data sheet + Summary Dashboard sheet")
+               description = "Returns Raw Data sheet + Summary Dashboard sheet")
     public ResponseEntity<ByteArrayResource> export(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
@@ -100,9 +96,28 @@ public class DisbursalController {
     //  Available months (for calendar picker)
     // ─────────────────────────────────────────────────────────────
     @GetMapping("/available-months")
-    @PreAuthorize("hasAnyRole('USER','ADMIN')")
     @Operation(summary = "Get list of months available in database")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> availableMonths() {
         return ResponseEntity.ok(ApiResponse.ok(disbursalService.getAvailableMonths()));
+    }
+    /**
+     * GET /disbursal/recon-data
+     * Returns all disbursal records for LI reconciliation.
+     * Used to replace SAP HANA file + Monthly DR file uploads.
+     *
+     * Response per record:
+     *   loanApplicationId, liCharges, disbursementDate, loanStatus,
+     *   cancellationDate, vehicleRegNo, channel, segment
+     */
+    @GetMapping("/recon-data")
+    public ResponseEntity<Map<String,Object>> getReconData() {
+        try {
+            var records = disbursalService.getAllForRecon();
+            return ResponseEntity.ok(Map.of("success", true, "data", records));
+        } catch (Exception e) {
+            log.error("[Disbursal] recon-data error: {}", e.getMessage());
+            return ResponseEntity.status(500)
+                .body(Map.of("success", false, "message", e.getMessage()));
+        }
     }
 }
