@@ -1,0 +1,147 @@
+/*
+ * ================================================================
+ * FinRecon Pro — NBFC Finance Suite
+ * ================================================================
+ * File        : css/layout.css
+ * Description : Structural layout — fixed sidebar, sticky topbar,
+ *               main content shell and panel display system.
+ *               Depends on: base.css
+ *
+ * Author      : Jatin Mittal
+ * Email       : jatin.mittal@cars24.com
+ * Version     : 1.0.0
+ * Created     : April 2024
+ * ================================================================
+ */
+
+.app { display: flex; min-height: 100vh; }
+
+/* ── Sidebar ── */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--navy);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  z-index: 100;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.sidebar::-webkit-scrollbar { display: none; }
+
+.sidebar-logo {
+  padding: 20px 18px 16px;
+  border-bottom: 1px solid rgba(200, 153, 42, 0.25);
+  flex-shrink: 0;
+}
+.sidebar-logo .org {
+  font-family: 'Playfair Display', serif;
+  font-size: 15px;
+  color: var(--gold-lt);
+  font-weight: 600;
+}
+.sidebar-logo .sub {
+  font-size: 9px;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  margin-top: 3px;
+}
+
+.sidebar-section  { padding: 12px 0 4px; }
+.sidebar-section-label {
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.28);
+  padding: 0 18px 6px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 18px;
+  cursor: pointer;
+  font-size: 12px;
+  color: rgba(255,255,255,0.52);
+  border-left: 2px solid transparent;
+  transition: color var(--t-fast), background var(--t-fast);
+  user-select: none;
+}
+.nav-item svg    { flex-shrink: 0; }
+.nav-item:hover  { color: rgba(255,255,255,0.88); background: rgba(255,255,255,0.04); }
+.nav-item.active { color: var(--gold-lt); border-left-color: var(--gold); background: rgba(200,153,42,0.09); font-weight: 500; }
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 14px 18px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+.sidebar-footer .user-info { font-size: 11px; color: rgba(255,255,255,0.55); }
+.sidebar-footer .user-role { font-size: 10px; color: rgba(255,255,255,0.28); }
+
+.user-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--navy-lt);
+  border: 1.5px solid var(--gold);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 500;
+  color: var(--gold-lt);
+  flex-shrink: 0;
+}
+
+/* ── Main ── */
+.main {
+  margin-left: var(--sidebar-w);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.topbar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 0 var(--content-pad);
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+.tb-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--navy);
+}
+.tb-right { display: flex; align-items: center; gap: 10px; }
+
+.date-b {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--cream);
+  border: 1px solid var(--border);
+  padding: 4px 11px;
+  border-radius: 20px;
+}
+.live-badge {
+  background: rgba(42,123,79,0.12);
+  color: var(--green-text);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 500;
+  border: 1px solid rgba(42,123,79,0.25);
+}
+
+.content { padding: 20px var(--content-pad); flex: 1; }
+
+.panel        { display: none; }
+.panel.active { display: block; }

@@ -18,6 +18,8 @@ public interface GenericFloatRepository<T extends FloatRecord>
     void deleteByMonthLabel(String monthLabel);
     void deleteByPeriodLabel(String periodLabel);
 
+    long countByPeriodLabel(String periodLabel);
+
     // NOTE: findMonthSummary, findPeriodSummary, findAvailableMonths,
     // findAvailablePeriods, countByDateRange are declared in each
     // concrete repo with @Query — NOT here in the base interface.

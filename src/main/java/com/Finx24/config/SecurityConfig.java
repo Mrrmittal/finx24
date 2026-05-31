@@ -71,6 +71,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/disbursal/upload").hasRole("ADMIN")
                         // Authenticated users (USER or ADMIN)
                         .requestMatchers("/disbursal/**").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/float/upload", "/float/upload-master", "/float/opening-balance").hasRole("ADMIN")
                         .requestMatchers("/float/**").authenticated()
                         .requestMatchers("/schedules/**").authenticated()
                         .requestMatchers("/recon/**").authenticated()

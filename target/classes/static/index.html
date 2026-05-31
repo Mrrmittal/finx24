@@ -1,0 +1,107 @@
+<!--
+  ================================================================
+  FinRecon Pro — NBFC Finance Suite
+  ================================================================
+  File        : index.html
+  Description : Main entry point. Loads all stylesheets and scripts
+                in the correct dependency order. Renders the app
+                shell — sidebar, topbar and content container.
+                All page content is injected dynamically by the
+                Router and page module system.
+
+  Author      : Jatin Mittal
+  Email       : jatin.mittal@cars24.com
+  Version     : 2.0.0 — Auth layer added
+  ================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinRecon Pro — NBFC Finance Suite</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+          href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=DM+Sans:wght@300;400;500&display=swap"
+          rel="stylesheet"
+  />
+
+  <!-- Chart.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+
+  <!-- SheetJS — Excel parsing (browser fallback for small files) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <!-- Stylesheets — order matters -->
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/pages.css" />
+</head>
+
+<body>
+<div class="app" id="app">
+
+  <!-- Sidebar (built by sidebar.js) -->
+  <aside class="sidebar" id="sidebar"></aside>
+
+  <!-- Main area -->
+  <main class="main" id="main">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="tb-title" id="tb-title">Dashboard</div>
+      <div class="tb-right">
+        <span class="live-badge">Live</span>
+        <span class="date-b" id="date-b"></span>
+        <button class="btn-o" onclick="exportCurrent()">Export</button>
+        <button class="btn-g" onclick="newEntry()">+ New Entry</button>
+      </div>
+    </div>
+
+    <!-- Page content — panels injected here by Router -->
+    <div class="content" id="content"></div>
+
+  </main>
+</div>
+
+<!--
+  Script load order — DO NOT change the sequence.
+
+  0. API service + Auth  (must be FIRST — everything depends on these)
+  1. Core shared modules (no dependencies)
+  2. Disbursal engine    (constants → parser → renderer)
+  3. Page modules        (depend on router + disbursal engine)
+  4. app.js last         (bootstraps everything — auth check runs here)
+-->
+
+<!-- 0. API + Auth — FIRST, everything depends on these -->
+<script src="js/modules/api.js"></script>
+<script src="js/modules/auth.js"></script>
+
+<!-- 1. Core -->
+<script src="js/modules/data.js"></script>
+<script src="js/modules/router.js"></script>
+<script src="js/modules/sidebar.js"></script>
+<script src="js/modules/charts.js"></script>
+
+<!-- 2. Disbursal engine -->
+<script src="js/modules/disbursal.constants.js"></script>
+<script src="js/modules/disbursal.parser.js"></script>
+<script src="js/modules/disbursal.renderer.js"></script>
+
+<!-- 3. Page modules -->
+<script src="js/modules/page.dashboard.js"></script>
+<script src="js/modules/page.recon.js"></script>
+<script src="js/modules/page.admin.js"></script>
+<script src="js/modules/page.disbursal.js"></script>
+<script src="js/modules/page.schedules.js"></script>
+<script src="js/modules/page.li-schedule.js"></script>
+<script src="js/modules/page.float-register.js"></script>
+
+<!-- 4. Bootstrap — runs last, after all modules registered -->
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -76,20 +76,19 @@ public class FloatServiceImpl implements FloatService {
         LocalDate maxDate = dataRows.stream().filter(r -> r.transDate != null)
             .map(r -> r.transDate).max(Comparator.naturalOrder()).orElse(null);
 
-        // Duplicate check — any rows already exist for this date range?
-        if (minDate != null && maxDate != null && !allowOverwrite) {
-            long existing = countByDateRange(partnerCode, minDate, maxDate);
-            if (existing > 0) {
-                wb.close();
-                throw new IllegalStateException(
-                    "Data already exists for " + minDate + " to " + maxDate +
-                    " (" + existing + " rows). Use overwrite=true to replace.");
-            }
+        // Check if period already uploaded for this partner
+        long existingCount = countByPeriodLabel(partnerCode, periodLabel);
+        if (existingCount > 0 && !allowOverwrite) {
+            wb.close();
+            throw new IllegalStateException(
+                "Data already exists for period '" + periodLabel +
+                "' (" + existingCount + " rows). Use overwrite=true to replace.");
         }
 
-        // Delete existing in this date range if overwrite
-        if (allowOverwrite && minDate != null && maxDate != null) {
-            deleteByDateRange(partnerCode, periodLabel, minDate, maxDate);
+        // Delete existing rows for this partner + period before re-insert
+        if (existingCount > 0) {
+            deleteByPartnerPeriod(partnerCode, periodLabel);
+            log.info("[Float] Deleted {} existing rows for {} / {}", existingCount, partnerCode, periodLabel);
         }
 
         // Save
@@ -143,6 +142,9 @@ public class FloatServiceImpl implements FloatService {
     // ================================================================
     private List<RowData> parseRows(Sheet sheet, Row hdr, ColMap cm, String periodLabel) {
         List<RowData> result = new ArrayList<>();
+        double runningBalance = 0.0;  // For Bajaj — no balance column
+        boolean hasBalanceCol = cm.balanceIdx >= 0;
+
         for (int r = hdr.getRowNum() + 1; r <= sheet.getLastRowNum(); r++) {
             Row row = sheet.getRow(r);
             if (row == null) continue;
@@ -154,14 +156,24 @@ public class FloatServiceImpl implements FloatService {
 
             double credit  = cm.creditIdx  >= 0 ? numCell(row.getCell(cm.creditIdx))  : 0;
             double debit   = cm.debitIdx   >= 0 ? numCell(row.getCell(cm.debitIdx))   : 0;
-            double balance = cm.balanceIdx >= 0 ? numCell(row.getCell(cm.balanceIdx)) : 0;
-            String bt      = cm.bookingTypeIdx >= 0 ? cellStr(row.getCell(cm.bookingTypeIdx)) : "";
+            double balance;
+            if (hasBalanceCol) {
+                balance = numCell(row.getCell(cm.balanceIdx));
+            } else {
+                // Bajaj GS/EW: no balance column — compute running balance
+                runningBalance += credit - debit;
+                balance = runningBalance;
+            }
+            String bt = cm.bookingTypeIdx >= 0 ? cellStr(row.getCell(cm.bookingTypeIdx)) : "";
 
             RowData rd = new RowData();
             rd.transDate           = transDate;
             rd.monthLabel          = transDate.format(MONTH_FMT);  // Auto from TRANS_DATE
             rd.periodLabel         = periodLabel;
-            rd.floatType           = cm.floatTypeIdx >= 0 ? cellStr(row.getCell(cm.floatTypeIdx)) : "";
+            // floatType: FLOAT_TYPE / Months column value
+            // Note: Kotak top-up now detected via bookingType (Transaction Type column)
+            //       not Receipt Status, so we just store the FLOAT_TYPE value
+            rd.floatType = cm.floatTypeIdx >= 0 ? cellStr(row.getCell(cm.floatTypeIdx)) : "";
             rd.accountManager      = cm.acctMgrIdx  >= 0 ? cellStr(row.getCell(cm.acctMgrIdx))  : "";
             rd.imdCode             = cm.imdIdx       >= 0 ? cellStr(row.getCell(cm.imdIdx))      : "";
             rd.bookingType         = bt;
@@ -228,6 +240,46 @@ public class FloatServiceImpl implements FloatService {
     protected void deleteByDateRange(String partnerCode, String periodLabel,
                                       LocalDate from, LocalDate to) {
         // Delete rows whose transDate falls in range
+        switch (partnerCode) {
+            case "Go_Digit_LI"            -> goDigitLiRepo.deleteByPeriodLabel(periodLabel);
+            case "Kotak_LI"               -> kotakLiRepo.deleteByPeriodLabel(periodLabel);
+            case "Tata_AIG_MI_GS"         -> tataAigRepo.deleteByPeriodLabel(periodLabel);
+            case "ICICI_Lombard_MI_GS"    -> iciciGsRepo.deleteByPeriodLabel(periodLabel);
+            case "United_MI_GS"           -> unitedRepo.deleteByPeriodLabel(periodLabel);
+            case "Go_Digit_MI_GS"         -> goDigitGsRepo.deleteByPeriodLabel(periodLabel);
+            case "Kotak_MI_GS"            -> kotakGsRepo.deleteByPeriodLabel(periodLabel);
+            case "Go_Digit_INSURE24"      -> goDigitI24Repo.deleteByPeriodLabel(periodLabel);
+            case "Kotak_INSURE24"         -> kotakI24Repo.deleteByPeriodLabel(periodLabel);
+            case "Tata_INSURE24"          -> tataI24Repo.deleteByPeriodLabel(periodLabel);
+            case "ICICI_Lombard_INSURE24" -> iciciI24Repo.deleteByPeriodLabel(periodLabel);
+            case "Bajaj_INSURE24"         -> bajajI24Repo.deleteByPeriodLabel(periodLabel);
+            case "Go_Digit_DO"            -> goDigitDoRepo.deleteByPeriodLabel(periodLabel);
+            case "Bajaj_EW"               -> bajajEwRepo.deleteByPeriodLabel(periodLabel);
+        }
+    }
+
+    private long countByPeriodLabel(String partnerCode, String periodLabel) {
+        return switch (partnerCode) {
+            case "Go_Digit_LI"            -> goDigitLiRepo.countByPeriodLabel(periodLabel);
+            case "Kotak_LI"               -> kotakLiRepo.countByPeriodLabel(periodLabel);
+            case "Tata_AIG_MI_GS"         -> tataAigRepo.countByPeriodLabel(periodLabel);
+            case "ICICI_Lombard_MI_GS"    -> iciciGsRepo.countByPeriodLabel(periodLabel);
+            case "United_MI_GS"           -> unitedRepo.countByPeriodLabel(periodLabel);
+            case "Go_Digit_MI_GS"         -> goDigitGsRepo.countByPeriodLabel(periodLabel);
+            case "Kotak_MI_GS"            -> kotakGsRepo.countByPeriodLabel(periodLabel);
+            case "Go_Digit_INSURE24"      -> goDigitI24Repo.countByPeriodLabel(periodLabel);
+            case "Kotak_INSURE24"         -> kotakI24Repo.countByPeriodLabel(periodLabel);
+            case "Tata_INSURE24"          -> tataI24Repo.countByPeriodLabel(periodLabel);
+            case "ICICI_Lombard_INSURE24" -> iciciI24Repo.countByPeriodLabel(periodLabel);
+            case "Bajaj_INSURE24"         -> bajajI24Repo.countByPeriodLabel(periodLabel);
+            case "Go_Digit_DO"            -> goDigitDoRepo.countByPeriodLabel(periodLabel);
+            case "Bajaj_EW"               -> bajajEwRepo.countByPeriodLabel(periodLabel);
+            default -> 0L;
+        };
+    }
+
+    @Transactional
+    protected void deleteByPartnerPeriod(String partnerCode, String periodLabel) {
         switch (partnerCode) {
             case "Go_Digit_LI"            -> goDigitLiRepo.deleteByPeriodLabel(periodLabel);
             case "Kotak_LI"               -> kotakLiRepo.deleteByPeriodLabel(periodLabel);
@@ -376,6 +428,44 @@ public class FloatServiceImpl implements FloatService {
     // ================================================================
     //  DASHBOARD
     // ================================================================
+    /**
+     * Returns the most recent reference balance (Opening or Closing Balance row).
+     * For Bajaj I24: Mar'26 closing = 248332 is used as base for Apr'26 onwards.
+     */
+    private java.math.BigDecimal getOpeningBalance(String partnerCode) {
+        try {
+            // Try "Closing Balance Mar26" first (more recent reference), fallback to "Opening Balance"
+            java.util.List<? extends FloatRecord> refRows = switch (partnerCode) {
+                case "Go_Digit_LI"            -> goDigitLiRepo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                case "Kotak_LI"               -> kotakLiRepo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                case "Tata_AIG_MI_GS"         -> tataAigRepo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                case "ICICI_Lombard_MI_GS"    -> iciciGsRepo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                case "United_MI_GS"           -> unitedRepo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                case "Go_Digit_MI_GS"         -> goDigitGsRepo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                case "Kotak_MI_GS"            -> kotakGsRepo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                case "Go_Digit_INSURE24"      -> goDigitI24Repo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                case "Kotak_INSURE24"         -> kotakI24Repo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                case "Tata_INSURE24"          -> tataI24Repo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                case "ICICI_Lombard_INSURE24" -> iciciI24Repo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                case "Bajaj_INSURE24"         -> bajajI24Repo.findByPeriodLabelOrderByTransDateAsc("Closing Balance Mar26");
+                case "Go_Digit_DO"            -> goDigitDoRepo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                case "Bajaj_EW"               -> bajajEwRepo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");
+                default -> java.util.List.of();
+            };
+            FloatRecord row = firstOrNull(refRows);
+            return (row != null && row.getBalance() != null)
+                ? row.getBalance()
+                : java.math.BigDecimal.ZERO;
+        } catch (Exception e) {
+            log.warn("[Float] getOpeningBalance error: {}", e.getMessage());
+            return java.math.BigDecimal.ZERO;
+        }
+    }
+
+    private <T extends FloatRecord> FloatRecord firstOrNull(List<T> list) {
+        return (list != null && !list.isEmpty()) ? list.get(0) : null;
+    }
+
     @Override
     public Map<String, Object> getDashboard(String partnerCode, String filter) {
         // filter ignored — always return all months, frontend filters by period
@@ -411,12 +501,16 @@ public class FloatServiceImpl implements FloatService {
             m.put("closingBal",   r[4]);
             summary.add(m);
         }
+        // Fetch the DB opening balance (the dedicated "Opening Balance" period row)
+        java.math.BigDecimal dbOpening = getOpeningBalance(partnerCode);
+
         return Map.of(
-            "partnerCode", partnerCode,
-            "glAccount",   FloatConstants.getGl(partnerCode),
-            "parentGl",    FloatConstants.getParentGl(
-                FloatConstants.CATEGORY.getOrDefault(partnerCode, "MI")),
-            "summary", summary
+            "partnerCode",           partnerCode,
+            "glAccount",             FloatConstants.getGl(partnerCode),
+            "parentGl",              FloatConstants.getParentGl(
+                                         FloatConstants.CATEGORY.getOrDefault(partnerCode, "MI")),
+            "initialOpeningBalance", dbOpening,   // DB opening balance (before first transaction)
+            "summary",               summary
         );
     }
 
@@ -467,21 +561,125 @@ public class FloatServiceImpl implements FloatService {
         int bookingTypeIdx=-1, detailsIdx=-1;
         int creditIdx=-1, debitIdx=-1, balanceIdx=-1;
         int policyIdx=-1, loanIdIdx=-1;
+        int receiptStatusIdx=-1;  // Kotak: "Receipt Status" stored in floatType
     }
 
+    /**
+     * Universal column resolver — handles all 7 partner formats:
+     *
+     * Go Digit LI/GS/I24/DO : FLOAT_TYPE, TRANS_DATE, BOOKING_TYPE, CREDIT_AMT, DEBIT_AMT, BALANCE, Loan ID / Reg No
+     * TATA AIG GS/I24        : Month, Trans Date, Trans_Type, Credit Amount, Debit Amount, Closing Balance, Reg No
+     * Kotak GS/I24           : Month, Transaction Date, Transaction Type, Credit, Debit, Balance, Reg number
+     * Bajaj GS/I24           : Month, C Trans Date, C Trans Desc, C Credit, C Debit (NO balance col)
+     * Bajaj EW               : Month, Trans Date, C Trans Desc, C Credit, C Debit, Expenses (NO balance col)
+     * ICICI GS/I24           : entereddate, transaction_type, credit, debit, closingbalance, Reg No (header row 2)
+     * United GS              : Name Of Insured, Registration No., Business Type, Trans Date, Credit Amount, Closing
+     */
     private ColMap resolveColumns(Map<String,Integer> ci) {
         ColMap cm = new ColMap();
-        cm.transDateIdx   = first(ci,"TRANS_DATE","Trans Date","Trans_DATE");
-        cm.floatTypeIdx   = first(ci,"FLOAT_TYPE");
-        cm.acctMgrIdx     = first(ci,"ACCOUNT_MANAGER","AC HOLDER NAME","Customer Name");
-        cm.imdIdx         = first(ci,"IMD_CODE","Producer Code");
-        cm.bookingTypeIdx = first(ci,"BOOKING_TYPE","Transaction Type","Trans_Type");
-        cm.detailsIdx     = first(ci,"TRANSACTION_DETAILS","PARTICULARS","particulars");
-        cm.creditIdx      = first(ci,"CREDIT_AMT","Credit Amount","CREDIT","Credit","credit");
-        cm.debitIdx       = first(ci,"DEBIT_AMT","Debit Amount","DEBIT","Debit","debit");
-        cm.balanceIdx     = first(ci,"BALANCE","Balance","Closing Balance","Closing");
-        cm.policyIdx      = first(ci,"POLICY_NUMBER","Policy No","PolicyNumber");
-        cm.loanIdIdx      = first(ci,"Loan ID","LOAN_ID","loan_id");
+
+        // ── Trans Date ───────────────────────────────────────────
+        cm.transDateIdx = first(ci,
+            "TRANS_DATE","Trans Date","Trans_DATE","Trans_Date",
+            "Transaction Date","Trans_date",
+            "C Trans Date",       // Bajaj GS/EW
+            "entereddate",        // ICICI
+            "TRANS DATE");
+
+        // ── Float Type / Month label ─────────────────────────────
+        cm.floatTypeIdx = first(ci,"FLOAT_TYPE","Months","Month");
+
+        // ── Account Manager / Customer Name ─────────────────────
+        cm.acctMgrIdx = first(ci,
+            "ACCOUNT_MANAGER","AC HOLDER NAME","Customer Name",
+            "C Customer Name",    // Bajaj
+            "customername",       // ICICI
+            "Name Of Insured",    // United
+            "IntermName TaggedtoPolicy");
+
+        // ── IMD / Producer Code ──────────────────────────────────
+        cm.imdIdx = first(ci,
+            "IMD_CODE","Producer Code","IMD CODE",
+            "IntermCode TaggedtoPolicy",  // Kotak
+            "code");                      // ICICI
+
+        // ── Booking Type / Transaction Type ──────────────────────
+        // TATA AIG: Trans_Type (new business, Negative Endorsement etc)
+        // ICICI:    transaction_type ("---" = top up, "Policy Issuance" etc)
+        // Go Digit: BOOKING_TYPE
+        // Kotak:    Transaction Type
+        // Bajaj:    C Trans Desc
+        // United:   Business Type ("Credit" = top up)
+        cm.bookingTypeIdx = first(ci,
+            "BOOKING_TYPE",
+            "Trans_Type",          // TATA AIG
+            "transaction_type",    // ICICI ← "---" means top up
+            "Transaction Type",    // Kotak
+            "C Trans Desc",        // Bajaj
+            "Business Type",       // United
+            "Business_Type");
+
+        // ── Transaction Details / Particulars ────────────────────
+        // TATA AIG: "Mode of Payment" = "RTGS/NEFT" for top-up
+        // ICICI: "particulars" = description
+        cm.detailsIdx = first(ci,
+            "TRANSACTION_DETAILS","PARTICULARS","particulars",
+            "Mode of Payment",     // TATA AIG ← "RTGS/NEFT" = top up
+            "Product Name",        // Kotak
+            "applicationname");    // ICICI
+
+        // ── Credit ───────────────────────────────────────────────
+        cm.creditIdx = first(ci,
+            "CREDIT_AMT","Credit Amount","Credit","CREDIT","credit",
+            "C Credit",            // Bajaj
+            "Credit Amount");
+
+        // ── Debit ────────────────────────────────────────────────
+        cm.debitIdx = first(ci,
+            "DEBIT_AMT","Debit Amount","Debit","DEBIT","debit",
+            "C Debit",             // Bajaj
+            "Total Premium in Portal");
+
+        // ── Balance (Closing) ────────────────────────────────────
+        // Bajaj has NO balance col — will be computed via running balance
+        cm.balanceIdx = first(ci,
+            "BALANCE","Balance","Closing Balance","Closing",
+            "CLOSING_BALANCE","closingbalance",  // ICICI
+            "Closing");                           // United
+
+        // ── Policy Number ────────────────────────────────────────
+        cm.policyIdx = first(ci,
+            "POLICY_NUMBER","Policy No","PolicyNumber","POLICY_NO",
+            "Policy Number",       // TATA / United
+            "C Policy Number",     // Bajaj
+            "policyno_endno");     // ICICI
+
+        // ── Reg No (MI) / Loan ID (LI) ──────────────────────────
+        // LI uses "Loan ID", all MI partners use Reg Number
+        cm.loanIdIdx = first(ci,
+            "Reg No",              // Go Digit MI / ICICI / TATA AIG col 42
+            "Reg number",          // Kotak
+            "Reg Number",          // TATA AIG col 31
+            "REG_NO","Reg. No.",
+            "Registration No.","REGN_NO",
+            "Loan ID","LOAN_ID","loan_id");  // LI only
+
+        // ── Receipt Status (Kotak only → stored in floatType) ───
+        cm.receiptStatusIdx = first(ci,"Receipt Status","RECEIPT_STATUS");
+
+        // ── ICICI: use TRANS_DATE not entereddate for primary date ──
+        // (entereddate is entry date, TRANS_DATE is actual transaction date)
+        if (cm.transDateIdx < 0) {
+            cm.transDateIdx = first(ci,"entereddate","ENTEREDDATE");
+        }
+
+        // ── Policy No — ensure numeric policies prioritized ────────
+        // For MI: policyno_endno may include endorsement suffix, POLICY_NO is clean
+        if (first(ci,"POLICY_NO") >= 0) {
+            cm.policyIdx = first(ci,"POLICY_NO","policyno_endno","Policy No",
+                "Policy Number","C Policy Number","PolicyNumber","POLICY_NUMBER");
+        }
+
         return cm;
     }
 
@@ -493,9 +691,12 @@ public class FloatServiceImpl implements FloatService {
     }
 
     private Row findHeaderRow(Sheet sheet) {
-        Set<String> keywords = Set.of("TRANS_DATE","Trans Date","FLOAT_TYPE",
-            "CREDIT_AMT","Credit Amount","Credit","BOOKING_TYPE");
-        for (int i = 0; i <= Math.min(10, sheet.getLastRowNum()); i++) {
+        Set<String> keywords = Set.of(
+            "TRANS_DATE","Trans Date","Trans_Date","FLOAT_TYPE",
+            "CREDIT_AMT","Credit Amount","Credit","C Credit",
+            "BOOKING_TYPE","Trans_Type","transaction_type",
+            "entereddate","Transaction Date","C Trans Date");
+        for (int i = 0; i <= Math.min(12, sheet.getLastRowNum()); i++) {
             Row r = sheet.getRow(i); if (r == null) continue;
             for (Cell c : r)
                 if (keywords.contains(cellStr(c).trim())) return r;
@@ -566,12 +767,42 @@ public class FloatServiceImpl implements FloatService {
         return BigDecimal.valueOf(Math.round(v * 10000.0) / 10000.0);
     }
 
+    // Excel epoch for serial date conversion
+    private static final java.time.LocalDate EXCEL_EPOCH =
+        java.time.LocalDate.of(1899, 12, 30);
+
     private LocalDate parseDate(String s) {
-        if (s==null||s.isBlank()) return null;
-        String t = s.trim(); if (t.contains(" ") && t.length()>10) t=t.substring(0,10);
-        for (String fmt : new String[]{"MMM d, yyyy","MMM dd, yyyy","yyyy-MM-dd","dd-MM-yyyy","dd/MM/yyyy"})
-            try { return LocalDate.parse(s.trim(), DateTimeFormatter.ofPattern(fmt, java.util.Locale.ENGLISH)); }
-            catch(DateTimeParseException ignored) {}
+        if (s == null || s.isBlank()) return null;
+        String t = s.trim();
+
+        // 1. Excel serial number: "45566" or "45566.457"
+        if (t.matches("^\\d{5}(\\.\\d+)?$")) {
+            try {
+                long serial = (long) Double.parseDouble(t);
+                if (serial > 40000 && serial < 60000) {  // sane range: 2009-2064
+                    return EXCEL_EPOCH.plusDays(serial);
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+
+        // 2. Normalize missing space: "Dec 1,2025" → "Dec 1, 2025"
+        t = t.replaceAll(",(\\S)", ", $1");
+
+        // 3. Try all known string formats
+        // NOTE: MM/dd/yyyy comes BEFORE dd/MM/yyyy because TATA AIG & ICICI use US format
+        for (String fmt : new String[]{
+            "MMM d, yyyy", "MMM dd, yyyy",  // Apr 1, 2025 / Apr 15, 2025
+            "yyyy-MM-dd",                    // 2025-04-01
+            "MM/dd/yyyy",  "M/d/yyyy",       // 04/01/2025 / 4/1/2025  (TATA AIG, ICICI)
+            "dd-MM-yyyy",  "dd/MM/yyyy",     // 01-04-2025 / 01/04/2025 (Indian format)
+            "d MMM yyyy",  "dd MMM yyyy",    // 1 Apr 2025 / 15 Apr 2025
+        }) {
+            try {
+                return LocalDate.parse(t,
+                    DateTimeFormatter.ofPattern(fmt, java.util.Locale.ENGLISH));
+            } catch (DateTimeParseException ignored) {}
+        }
+        log.warn("[Float] Cannot parse date: '{}'", s);
         return null;
     }
 }
