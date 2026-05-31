@@ -225,6 +225,13 @@ const API = (() => {
   // ── Public API ──────────────────────────────────────────────────
 
   // ── Float Register API ──────────────────────────────────────────
+  const PocketInsurance = {
+    preview: async function(from, to, label) {
+      var q = 'from='+from+'&to='+to+'&monthLabel='+encodeURIComponent(label);
+      return get('/schedules/pocket-insurance/preview?'+q);
+    },
+  };
+
   const Float = {
     upload: async function(file, partnerCode, period, overwrite) {
       const form = new FormData();
@@ -253,6 +260,14 @@ const API = (() => {
       var q = 'partnerCode=' + encodeURIComponent(partnerCode);
       if (month) q += '&month=' + encodeURIComponent(month);
       return get('/float/dashboard?' + q);
+    },
+    exportRegister: function(month) {
+      // Returns download URL for MI Float Register Excel
+      var base = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+          ? 'http://localhost:8080/api'
+          : window.location.origin + '/api';
+      return base + '/float/export?month=' + encodeURIComponent(month)
+          + '&token=' + encodeURIComponent(localStorage.getItem('finx24_token') || '');
     },
     getPartners: async function(category) {
       return get('/float/partners?category=' + category);

@@ -94,6 +94,10 @@ Router.register('li-schedule', function(panel) {
                 style="padding:11px 32px;font-size:14px">
           📋 Generate LI Schedule
         </button>
+        <button class="btn-o" id="li-export-btn"
+                style="padding:11px 28px;font-size:14px;display:none;margin-left:12px">
+          ⬇ Export Schedule
+        </button>
       </div>
 
       <!-- Progress -->
@@ -163,10 +167,23 @@ Router.register('li-schedule', function(panel) {
     </div>
   `;
 
+    var _lastBlob  = null;
+    var _lastLabel = null;
+
     // Wire
     _loadMonths();
     document.getElementById('li-generate-btn')
         .addEventListener('click', _generate);
+    document.getElementById('li-export-btn')
+        .addEventListener('click', function() {
+            if (!_lastBlob) { return; }
+            var url = URL.createObjectURL(_lastBlob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'LI_Schedule_' + (_lastLabel||'').replace("'","_") + '.xlsx';
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a); URL.revokeObjectURL(url);
+        });
 
     // ================================================================
     async function _loadMonths() {
@@ -250,17 +267,19 @@ Router.register('li-schedule', function(panel) {
                 throw new Error(err.message || 'Server error ('+res.status+')');
             }
 
+            // Store blob — no auto-download, user clicks Export
             var blob = await res.blob();
-            var url  = URL.createObjectURL(blob);
-            var a    = document.createElement('a');
-            a.href   = url;
-            a.download = 'LI_Schedule_' + label.replace("'","_") + '.xlsx';
-            a.click();
-            URL.revokeObjectURL(url);
+            _lastBlob   = blob;
+            _lastLabel  = label;
 
             bar.style.width = '100%'; msg.textContent = 'Done!';
             _msg('success',
-                '✅ LI Schedule generated — <strong>'+label+'</strong> · '+from+' → '+to);
+                '✅ Dashboard ready — <strong>'+label+'</strong> · '+from+' → '+to
+                + ' &nbsp;·&nbsp; Click <strong>Export Schedule</strong> to download Excel.');
+
+            // Show export button
+            var exportBtn = document.getElementById('li-export-btn');
+            if (exportBtn) exportBtn.style.display = 'inline-block';
 
             await _loadDashboard(from, to, label, token);
 

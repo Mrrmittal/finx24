@@ -191,4 +191,30 @@ public interface DisbursalRepository extends JpaRepository<DisbursalRecord, Stri
             @Param("from") LocalDate from,
             @Param("to")   LocalDate to);
 
+    // ── Pocket Insurance Schedule ─────────────────────────────────
+    /** Active cases in period WITH pocket insurance charge > 0 */
+    @Query("""
+        SELECT r FROM DisbursalRecord r
+        WHERE r.disbursementDate >= :from
+          AND r.disbursementDate <= :to
+          AND (r.cancellationDate IS NULL OR r.cancellationDate > :to)
+          AND r.pocketInsuranceCharge > 0
+        ORDER BY r.channel ASC, r.disbursementDate ASC
+        """)
+    List<DisbursalRecord> findActivePocketInsurance(
+            @Param("from") LocalDate from,
+            @Param("to")   LocalDate to);
+
+    /** Sub-cancellations: cancelled IN period, disbursed BEFORE period, PI > 0 */
+    @Query("""
+        SELECT r FROM DisbursalRecord r
+        WHERE r.cancellationDate >= :from
+          AND r.cancellationDate <= :to
+          AND r.disbursementDate < :from
+          AND r.pocketInsuranceCharge > 0
+        ORDER BY r.cancellationDate ASC
+        """)
+    List<DisbursalRecord> findSubCancelPocketInsurance(
+            @Param("from") LocalDate from,
+            @Param("to")   LocalDate to);
 }

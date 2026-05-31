@@ -46,11 +46,44 @@ Router.register('float-register', function(panel) {
       '<div class="hero-sub">Bank statement ledger · LI Float · MI Float</div>' +
       '</div></div>' +
 
-      // Tabs
-      '<div style="display:flex;gap:0;margin-bottom:16px;border-radius:8px;overflow:hidden;' +
-      'border:1.5px solid rgba(11,31,58,0.15);width:fit-content">' +
+      // Tabs + Export
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">' +
+      '<div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1.5px solid rgba(11,31,58,0.15)">' +
       '<button id="tab-li" style="padding:9px 28px;font-size:13px;font-weight:600;cursor:pointer;background:#0B1F3A;color:#E8B84B;border:none">🛡️ LI Float</button>' +
       '<button id="tab-mi" style="padding:9px 28px;font-size:13px;font-weight:600;cursor:pointer;background:#fff;color:#0B1F3A;border:none">🚗 MI Float</button>' +
+      '</div>' +
+      '<button id="fl-export-register-btn" style="display:none;padding:9px 20px;font-size:12px;font-weight:600;' +
+      'background:#0B1F3A;color:#E8B84B;border:none;border-radius:8px;cursor:pointer;' +
+      'align-items:center;gap:6px">📥 Download Float Register</button>' +
+      '</div>' +
+
+      // Export modal
+      '<div id="fl-export-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);' +
+      'z-index:9999;align-items:center;justify-content:center">' +
+      '<div style="background:#fff;border-radius:14px;padding:28px 32px;width:360px;' +
+      'box-shadow:0 12px 40px rgba(0,0,0,0.18)">' +
+      '<div style="font-size:16px;font-weight:700;color:#0B1F3A;margin-bottom:6px" id="fl-export-modal-title">' +
+      '📥 Download Float Register' +
+      '</div>' +
+      '<div style="font-size:12px;color:#5A6E88;margin-bottom:18px">' +
+      'Select a month to generate the Float Register Excel with formula-based summary.' +
+      '</div>' +
+      '<div style="margin-bottom:16px">' +
+      '<div style="font-size:11px;font-weight:600;color:#0B1F3A;margin-bottom:6px">Select Month</div>' +
+      '<input type="month" id="fl-export-month-sel" class="form-input" style="width:100%">' +
+      '</div>' +
+      '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+      '<button id="fl-export-cancel-btn" style="padding:8px 20px;font-size:12px;' +
+      'background:#F2F4F7;color:#0B1F3A;border:none;border-radius:7px;cursor:pointer">' +
+      'Cancel' +
+      '</button>' +
+      '<button id="fl-export-download-btn" style="padding:8px 20px;font-size:12px;' +
+      'background:#0B1F3A;color:#E8B84B;border:none;border-radius:7px;cursor:pointer;font-weight:600">' +
+      '⬇ Download' +
+      '</button>' +
+      '</div>' +
+      '<div id="fl-export-status" style="margin-top:10px;font-size:11px;color:#5A6E88"></div>' +
+      '</div>' +
       '</div>' +
 
       // ── UPLOAD (Admin only) ───────────────────────────────────
@@ -115,6 +148,9 @@ Router.register('float-register', function(panel) {
     Router.go('float-register');
     setTimeout(function(){ _switchTab('MI'); }, 50);
   });
+  document.getElementById('fl-export-register-btn').addEventListener('click', _openExportModal);
+  document.getElementById('fl-export-cancel-btn').addEventListener('click', _closeExportModal);
+  document.getElementById('fl-export-download-btn').addEventListener('click', _downloadRegister);
   if (Auth.isAdmin() && document.getElementById('fl-upload-btn')) {
     document.getElementById('fl-upload-btn').addEventListener('click', _upload);
   }
@@ -138,7 +174,96 @@ Router.register('float-register', function(panel) {
 
   _switchTab('LI');
 
-  // ================================================================
+  // ── Export modal ──────────────────────────────────────────────
+  // ── Export Modal (MI only — month select → all 12 partners) ──
+  async function _openExportModal() {
+    // Update title
+    var titleEl = document.getElementById('fl-export-modal-title');
+    if (titleEl) titleEl.textContent = '📥 Download MI Float Register';
+
+    // Set default month to current month
+    var now = new Date();
+    var sel = document.getElementById('fl-export-month-sel');
+    if (sel) sel.value = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+
+    var sel = document.getElementById('fl-export-month-sel');
+    sel.innerHTML = '<option value="">— Loading months... —</option>';
+
+    // Load months from TATA AIG (most data) as reference for available months
+    // User can also type a month manually
+    try {
+      var res = await API.Float.getMonths('Tata_AIG_MI_GS');
+      var months = (res && res.data) ? res.data : [];
+      // Also try Go Digit GS if TATA has less
+      if (months.length < 3) {
+        var res2 = await API.Float.getMonths('Go_Digit_MI_GS');
+        if (res2 && res2.data && res2.data.length > months.length) months = res2.data;
+      }
+      if (months.length) {
+        sel.innerHTML = '<option value="">— Select Month —</option>'
+            + months.map(function(m){return '<option value="'+m+'">'+m+'</option>';}).join('');
+        sel.value = months[months.length-1];  // Default: latest month
+      } else {
+        sel.innerHTML = '<option value="">— No data uploaded yet —</option>';
+      }
+    } catch(e) {
+      sel.innerHTML = '<option value="">— Error loading months —</option>';
+    }
+
+    document.getElementById('fl-export-status').textContent = '';
+    document.getElementById('fl-export-modal').style.display = 'flex';
+  }
+
+  function _closeExportModal() {
+    document.getElementById('fl-export-modal').style.display = 'none';
+  }
+
+  async function _downloadRegister() {
+    var rawMonth = document.getElementById('fl-export-month-sel').value;
+    // Convert 'YYYY-MM' → "Apr'26" format
+    var MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var month = rawMonth ? MO[parseInt(rawMonth.split('-')[1])-1]+"'"+String(parseInt(rawMonth.split('-')[0])%100).padStart(2,'0') : '';
+    var status = document.getElementById('fl-export-status');
+    if (!month) {
+      status.textContent = '⚠️ Please select a month first.';
+      return;
+    }
+    var btn = document.getElementById('fl-export-download-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating...';
+    status.textContent = 'Fetching data for all 12 MI partners from database...';
+    try {
+      var base = (window.location.hostname==='localhost' || window.location.hostname==='127.0.0.1')
+          ? 'http://localhost:8080/api'
+          : window.location.origin + '/api';
+      var token = localStorage.getItem('finx24_jwt') || '';
+      var resp = await fetch(
+          base + '/float/export?category=MI&month=' + encodeURIComponent(month),
+          { headers: { 'Authorization': 'Bearer ' + token } }
+      );
+      if (!resp.ok) {
+        var msg = 'Export failed: ' + resp.status;
+        try { var j = await resp.json(); msg = j.message || msg; } catch(e2){}
+        throw new Error(msg);
+      }
+      var blob = await resp.blob();
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'MI_Float_Register_' + month.replace("'","") + '.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+      status.textContent = '✅ Downloaded: MI_Float_Register_' + month.replace("'","") + '.xlsx';
+      setTimeout(_closeExportModal, 2000);
+    } catch(e) {
+      status.textContent = '❌ ' + e.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '⬇ Download';
+    }
+  }
+
   function _switchTab(tab) {
     currentTab = tab;
     document.getElementById('tab-li').style.background = tab==='LI'?'#0B1F3A':'#fff';
@@ -148,6 +273,8 @@ Router.register('float-register', function(panel) {
     document.getElementById('fl-upload-title').textContent = tab==='LI'?'Upload LI Float':'Upload MI Float';
     document.getElementById('fl-dash-title').textContent   = tab==='LI'?'LI Float Dashboard (GL 13126064)':'MI Float Dashboard (GL 13126051)';
     document.getElementById('fl-reg-title').textContent    = tab==='LI'?'LI Float Register':'MI Float Register';
+    var expBtn = document.getElementById('fl-export-register-btn');
+    if (expBtn) expBtn.style.display = tab==='MI' ? 'flex' : 'none';
     _fillPartners('fl-partner',      tab);
     _fillPartners('fl-dash-partner', tab);
   }

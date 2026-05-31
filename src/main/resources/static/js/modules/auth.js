@@ -34,7 +34,7 @@ const Auth = (() => {
 
   // ── Pages accessible per role ────────────────────────────────────
   const ROLE_ACCESS = {
-    user:  ['dashboard', 'bank', 'motor', 'loanins', 'disbursal', 'schedules', 'li-schedule', 'float-register'],
+    user:  ['dashboard', 'bank', 'motor', 'loanins', 'disbursal', 'schedules', 'li-schedule', 'pocket-ins-schedule', 'float-register'],
     admin: '*',
   };
 
