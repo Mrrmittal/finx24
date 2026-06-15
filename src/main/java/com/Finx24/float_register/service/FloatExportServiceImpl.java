@@ -354,8 +354,6 @@ public class FloatExportServiceImpl implements FloatExportService {
         };
     }
 
-    // Top-up SUMIF criteria per partner
-    // Top-up SUMIF criteria per partner
     // Top-up SUMIF criteria per partner (returns Excel SUMIF criteria string)
     private String getTopUpCriteria(String code) {
         return switch (code) {

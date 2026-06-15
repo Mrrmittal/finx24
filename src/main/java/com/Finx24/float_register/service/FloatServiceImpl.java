@@ -43,6 +43,24 @@ public class FloatServiceImpl implements FloatService {
     private static final DateTimeFormatter MONTH_FMT =
         DateTimeFormatter.ofPattern("MMM''yy", java.util.Locale.ENGLISH);
 
+    // ── PR Register column config: {policyCol, loanIdCol, isIcici, cleanReg} ──
+    // United_MI_GS excluded — float data already carries reg no
+    private static final Map<String, String[]> PR_CFG = Map.ofEntries(
+        Map.entry("Go_Digit_LI",             new String[]{"POLICY_NUMBER",   "BOOKINGID_PLANID",       "false","false"}),
+        Map.entry("Kotak_LI",                new String[]{"POLICY_NUMBER",   "BOOKINGID_PLANID",       "false","false"}),
+        Map.entry("Go_Digit_MI_GS",          new String[]{"POLICY_NUMBER",   "VEH_REG_NO",             "false","false"}),
+        Map.entry("ICICI_Lombard_MI_GS",     new String[]{"POL_NUM_TXT",     "MOTOR_REGISTRATION_NUM", "true", "false"}),
+        Map.entry("Tata_AIG_MI_GS",          new String[]{"policy_no",       "registration_no",        "false","false"}),
+        Map.entry("Kotak_MI_GS",             new String[]{"POLICY NO",       "Registration Number",    "false","true" }),
+        Map.entry("Go_Digit_INSURE24",       new String[]{"POLICY_NUMBER",   "VEH_REG_NO",             "false","false"}),
+        Map.entry("Kotak_INSURE24",          new String[]{"POLICY NO",       "Registration Number",    "false","true" }),
+        Map.entry("Tata_INSURE24",           new String[]{"policy_no",       "registration_no",        "false","false"}),
+        Map.entry("ICICI_Lombard_INSURE24",  new String[]{"POL_NUM_TXT",     "MOTOR_REGISTRATION_NUM", "true", "false"}),
+        Map.entry("Bajaj_INSURE24",          new String[]{"Policy Number",   "Registration Number",    "false","false"}),
+        Map.entry("Go_Digit_DO",             new String[]{"POLICY_NUMBER",   "VEH_REG_NO",             "false","false"}),
+        Map.entry("Bajaj_EW",                new String[]{"Policy Number",   "Registration Number",    "false","false"})
+    );
+
     // ================================================================
     //  UPLOAD
     // ================================================================
@@ -52,60 +70,50 @@ public class FloatServiceImpl implements FloatService {
                                        String periodLabel, boolean allowOverwrite)
             throws IOException {
 
-        Workbook wb = WorkbookFactory.create(file.getInputStream());
-        Sheet sheet = wb.getSheetAt(0);
+        try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
+            Sheet sheet = wb.getSheetAt(0);
 
-        // Find header
-        Row hdr = findHeaderRow(sheet);
-        if (hdr == null) throw new IllegalArgumentException(
-            "Header row not found. Expected FLOAT_TYPE or TRANS_DATE column.");
+            Row hdr = findHeaderRow(sheet);
+            if (hdr == null) throw new IllegalArgumentException(
+                "Header row not found. Expected FLOAT_TYPE or TRANS_DATE column.");
 
-        Map<String, Integer> ci = buildColMap(hdr);
-        ColMap cm = resolveColumns(ci);
+            Map<String, Integer> ci = buildColMap(hdr);
+            ColMap cm = resolveColumns(ci);
 
-        // Parse all rows first — derive monthLabel from transDate
-        List<RowData> dataRows = parseRows(sheet, hdr, cm, periodLabel);
-        if (dataRows.isEmpty()) {
-            wb.close();
-            return Map.of("partnerCode", partnerCode, "inserted", 0, "message", "No data rows found");
+            List<RowData> dataRows = parseRows(sheet, hdr, cm, periodLabel);
+            if (dataRows.isEmpty()) {
+                return Map.of("partnerCode", partnerCode, "inserted", 0, "message", "No data rows found");
+            }
+
+            LocalDate minDate = dataRows.stream().filter(r -> r.transDate != null)
+                .map(r -> r.transDate).min(Comparator.naturalOrder()).orElse(null);
+            LocalDate maxDate = dataRows.stream().filter(r -> r.transDate != null)
+                .map(r -> r.transDate).max(Comparator.naturalOrder()).orElse(null);
+
+            long existingCount = countByPeriodLabel(partnerCode, periodLabel);
+            if (existingCount > 0 && !allowOverwrite) {
+                throw new IllegalStateException(
+                    "Data already exists for period '" + periodLabel +
+                    "' (" + existingCount + " rows). Use overwrite=true to replace.");
+            }
+            if (existingCount > 0) {
+                deleteByPartnerPeriod(partnerCode, periodLabel);
+                log.info("[Float] Deleted {} existing rows for {} / {}", existingCount, partnerCode, periodLabel);
+            }
+
+            int saved = dispatchSave(partnerCode, dataRows);
+            log.info("[Float] Saved: partner={} period={} rows={} dates={} to {}",
+                partnerCode, periodLabel, saved, minDate, maxDate);
+
+            return Map.of(
+                "partnerCode", partnerCode,
+                "glAccount",   FloatConstants.getGl(partnerCode),
+                "periodLabel", periodLabel,
+                "inserted",    saved,
+                "dateFrom",    minDate != null ? minDate.toString() : "",
+                "dateTo",      maxDate != null ? maxDate.toString() : ""
+            );
         }
-
-        // Date range of this file
-        LocalDate minDate = dataRows.stream().filter(r -> r.transDate != null)
-            .map(r -> r.transDate).min(Comparator.naturalOrder()).orElse(null);
-        LocalDate maxDate = dataRows.stream().filter(r -> r.transDate != null)
-            .map(r -> r.transDate).max(Comparator.naturalOrder()).orElse(null);
-
-        // Check if period already uploaded for this partner
-        long existingCount = countByPeriodLabel(partnerCode, periodLabel);
-        if (existingCount > 0 && !allowOverwrite) {
-            wb.close();
-            throw new IllegalStateException(
-                "Data already exists for period '" + periodLabel +
-                "' (" + existingCount + " rows). Use overwrite=true to replace.");
-        }
-
-        // Delete existing rows for this partner + period before re-insert
-        if (existingCount > 0) {
-            deleteByPartnerPeriod(partnerCode, periodLabel);
-            log.info("[Float] Deleted {} existing rows for {} / {}", existingCount, partnerCode, periodLabel);
-        }
-
-        // Save
-        int saved = dispatchSave(partnerCode, dataRows);
-        wb.close();
-
-        log.info("[Float] Saved: partner={} period={} rows={} dates={} to {}",
-            partnerCode, periodLabel, saved, minDate, maxDate);
-
-        return Map.of(
-            "partnerCode", partnerCode,
-            "glAccount",   FloatConstants.getGl(partnerCode),
-            "periodLabel", periodLabel,
-            "inserted",    saved,
-            "dateFrom",    minDate != null ? minDate.toString() : "",
-            "dateTo",      maxDate != null ? maxDate.toString() : ""
-        );
     }
 
     // ================================================================
@@ -235,28 +243,6 @@ public class FloatServiceImpl implements FloatService {
         return entities.size();
     }
 
-    // ── Delete by date range ─────────────────────────────────────
-    @Transactional
-    protected void deleteByDateRange(String partnerCode, String periodLabel,
-                                      LocalDate from, LocalDate to) {
-        // Delete rows whose transDate falls in range
-        switch (partnerCode) {
-            case "Go_Digit_LI"            -> goDigitLiRepo.deleteByPeriodLabel(periodLabel);
-            case "Kotak_LI"               -> kotakLiRepo.deleteByPeriodLabel(periodLabel);
-            case "Tata_AIG_MI_GS"         -> tataAigRepo.deleteByPeriodLabel(periodLabel);
-            case "ICICI_Lombard_MI_GS"    -> iciciGsRepo.deleteByPeriodLabel(periodLabel);
-            case "United_MI_GS"           -> unitedRepo.deleteByPeriodLabel(periodLabel);
-            case "Go_Digit_MI_GS"         -> goDigitGsRepo.deleteByPeriodLabel(periodLabel);
-            case "Kotak_MI_GS"            -> kotakGsRepo.deleteByPeriodLabel(periodLabel);
-            case "Go_Digit_INSURE24"      -> goDigitI24Repo.deleteByPeriodLabel(periodLabel);
-            case "Kotak_INSURE24"         -> kotakI24Repo.deleteByPeriodLabel(periodLabel);
-            case "Tata_INSURE24"          -> tataI24Repo.deleteByPeriodLabel(periodLabel);
-            case "ICICI_Lombard_INSURE24" -> iciciI24Repo.deleteByPeriodLabel(periodLabel);
-            case "Bajaj_INSURE24"         -> bajajI24Repo.deleteByPeriodLabel(periodLabel);
-            case "Go_Digit_DO"            -> goDigitDoRepo.deleteByPeriodLabel(periodLabel);
-            case "Bajaj_EW"               -> bajajEwRepo.deleteByPeriodLabel(periodLabel);
-        }
-    }
 
     private long countByPeriodLabel(String partnerCode, String periodLabel) {
         return switch (partnerCode) {
@@ -296,34 +282,6 @@ public class FloatServiceImpl implements FloatService {
             case "Go_Digit_DO"            -> goDigitDoRepo.deleteByPeriodLabel(periodLabel);
             case "Bajaj_EW"               -> bajajEwRepo.deleteByPeriodLabel(periodLabel);
         }
-    }
-
-    private long countByDateRange(String partnerCode, LocalDate from, LocalDate to) {
-        // Check if any rows exist in this date range by fetching all and filtering
-        // This avoids needing @Query in base interface
-        List<? extends FloatRecord> all = switch (partnerCode) {
-            case "Go_Digit_LI"            -> goDigitLiRepo.findAllByOrderByTransDateAsc();
-            case "Kotak_LI"               -> kotakLiRepo.findAllByOrderByTransDateAsc();
-            case "Tata_AIG_MI_GS"         -> tataAigRepo.findAllByOrderByTransDateAsc();
-            case "ICICI_Lombard_MI_GS"    -> iciciGsRepo.findAllByOrderByTransDateAsc();
-            case "United_MI_GS"           -> unitedRepo.findAllByOrderByTransDateAsc();
-            case "Go_Digit_MI_GS"         -> goDigitGsRepo.findAllByOrderByTransDateAsc();
-            case "Kotak_MI_GS"            -> kotakGsRepo.findAllByOrderByTransDateAsc();
-            case "Go_Digit_INSURE24"      -> goDigitI24Repo.findAllByOrderByTransDateAsc();
-            case "Kotak_INSURE24"         -> kotakI24Repo.findAllByOrderByTransDateAsc();
-            case "Tata_INSURE24"          -> tataI24Repo.findAllByOrderByTransDateAsc();
-            case "ICICI_Lombard_INSURE24" -> iciciI24Repo.findAllByOrderByTransDateAsc();
-            case "Bajaj_INSURE24"         -> bajajI24Repo.findAllByOrderByTransDateAsc();
-            case "Go_Digit_DO"            -> goDigitDoRepo.findAllByOrderByTransDateAsc();
-            case "Bajaj_EW"               -> bajajEwRepo.findAllByOrderByTransDateAsc();
-            default -> List.of();
-        };
-        final LocalDate f = from, t = to;
-        return all.stream()
-            .filter(r -> r.getTransDate() != null
-                && !r.getTransDate().isBefore(f)
-                && !r.getTransDate().isAfter(t))
-            .count();
     }
 
     // ================================================================
@@ -536,9 +494,7 @@ public class FloatServiceImpl implements FloatService {
                 ColMap cm = resolveColumns(ci);
                 List<RowData> rows = parseRows(sheet, hdr, cm, periodLabel);
                 if (!rows.isEmpty() && allowOverwrite) {
-                    deleteByDateRange(partnerCode, periodLabel,
-                        rows.stream().map(r->r.transDate).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null),
-                        rows.stream().map(r->r.transDate).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null));
+                    deleteByPartnerPeriod(partnerCode, periodLabel);
                 }
                 int saved = dispatchSave(partnerCode, rows);
                 results.put(e.getKey(), saved);
@@ -737,6 +693,185 @@ public class FloatServiceImpl implements FloatService {
             result.add(row);
         }
         return result;
+    }
+
+    // ================================================================
+    //  MAP LOAN ID / CAR REG NO FROM PR REGISTER
+    // ================================================================
+    @Override
+    @Transactional
+    public Map<String, Object> mapLoanId(MultipartFile file, String partnerCode,
+                                          String monthLabel) throws IOException {
+        String[] cfg = PR_CFG.get(partnerCode);
+        if (cfg == null) throw new IllegalArgumentException(
+            "No PR Register config for partner: " + partnerCode +
+            " (United_MI_GS is excluded — reg no is already in float data)");
+
+        String policyColName = cfg[0];
+        String loanIdColName = cfg[1];
+        boolean isIcici      = Boolean.parseBoolean(cfg[2]);
+        boolean cleanReg     = Boolean.parseBoolean(cfg[3]);
+
+        Map<String, String> policyMap = parsePrRegister(
+            file, policyColName, loanIdColName, isIcici, cleanReg);
+
+        if (policyMap.isEmpty()) {
+            return Map.of("partnerCode", partnerCode, "prRows", 0,
+                          "floatRows", 0, "mapped", 0, "notFound", 0,
+                          "message", "No policy entries found. Check PR Register columns: "
+                              + policyColName + " → " + loanIdColName);
+        }
+
+        int[] result = applyLoanIdMapping(partnerCode, monthLabel, policyMap, isIcici);
+        int mapped = result[0], total = result[1];
+
+        log.info("[Float] LoanID mapping: partner={} month={} prRows={} floatRows={} mapped={}",
+            partnerCode, monthLabel, policyMap.size(), total, mapped);
+
+        return Map.of(
+            "partnerCode", partnerCode,
+            "prRows",      policyMap.size(),
+            "floatRows",   total,
+            "mapped",      mapped,
+            "notFound",    total - mapped
+        );
+    }
+
+    private Map<String, String> parsePrRegister(MultipartFile file,
+            String policyColName, String loanIdColName,
+            boolean isIcici, boolean cleanReg) throws IOException {
+        Map<String, String> result = new LinkedHashMap<>();
+        try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
+            for (int si = 0; si < wb.getNumberOfSheets(); si++) {
+                Sheet sheet = wb.getSheetAt(si);
+                Row hdr = findPrHeaderRow(sheet, policyColName, loanIdColName);
+                if (hdr == null) continue;
+                Map<String, Integer> ci = buildColMap(hdr);
+                int polIdx  = first(ci, policyColName);
+                int lidIdx  = first(ci, loanIdColName);
+                if (polIdx < 0 || lidIdx < 0) continue;
+                for (int r = hdr.getRowNum() + 1; r <= sheet.getLastRowNum(); r++) {
+                    Row row = sheet.getRow(r);
+                    if (row == null) continue;
+                    String pol   = cellStr(row.getCell(polIdx)).trim();
+                    String loanId = cellStr(row.getCell(lidIdx)).trim();
+                    if (pol.isEmpty() || loanId.isEmpty()) continue;
+                    String key = normalizePolicyKey(pol, isIcici);
+                    if (key.isEmpty()) continue;
+                    if (cleanReg) loanId = cleanRegNo(loanId);
+                    if (!loanId.isEmpty()) result.put(key, loanId);
+                }
+            }
+        }
+        return result;
+    }
+
+    private Row findPrHeaderRow(Sheet sheet, String col1, String col2) {
+        for (int i = 0; i <= Math.min(20, sheet.getLastRowNum()); i++) {
+            Row r = sheet.getRow(i);
+            if (r == null) continue;
+            for (Cell c : r) {
+                String cv = cellStr(c).trim();
+                if (cv.equalsIgnoreCase(col1.trim()) || cv.equalsIgnoreCase(col2.trim())) return r;
+            }
+        }
+        return null;
+    }
+
+    private String normalizePolicyKey(String raw, boolean isIcici) {
+        if (raw == null || raw.isBlank()) return "";
+        String p = raw.trim();
+        if (p.endsWith(".0")) p = p.substring(0, p.length() - 2);
+        if (p.equals("---") || p.isEmpty()) return "";
+        if (isIcici) {
+            String[] parts = p.split("/");
+            return parts.length >= 3 ? parts[0] + "/" + parts[1] + "/" + parts[2] : p;
+        }
+        return p;
+    }
+
+    private String cleanRegNo(String reg) {
+        if (reg == null) return "";
+        return reg.replaceAll("[-/ ]", "").toUpperCase().trim();
+    }
+
+    private <T extends FloatRecord> int[] doApplyMap(
+            List<T> records, Map<String, String> policyMap,
+            Consumer<List<T>> saveAll, boolean isIcici) {
+        int mapped = 0;
+        for (T rec : records) {
+            String pol = rec.getPolicyNumber();
+            if (pol == null || pol.isBlank()) continue;
+            String key = normalizePolicyKey(pol.trim(), isIcici);
+            String loanId = policyMap.get(key);
+            if (loanId == null && !key.equals(pol.trim()))
+                loanId = policyMap.get(pol.trim()); // fallback to raw key
+            if (loanId != null && !loanId.isBlank()) {
+                rec.setLoanId(loanId);
+                mapped++;
+            }
+        }
+        if (mapped > 0) saveAll.accept(records);
+        return new int[]{mapped, records.size()};
+    }
+
+    private int[] applyLoanIdMapping(String partnerCode, String monthLabel,
+                                      Map<String, String> pm, boolean isIcici) {
+        return switch (partnerCode) {
+            case "Go_Digit_LI" -> doApplyMap(
+                monthLabel != null ? goDigitLiRepo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : goDigitLiRepo.findAllByOrderByTransDateAsc(),
+                pm, list -> goDigitLiRepo.saveAll(list), isIcici);
+            case "Kotak_LI" -> doApplyMap(
+                monthLabel != null ? kotakLiRepo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : kotakLiRepo.findAllByOrderByTransDateAsc(),
+                pm, list -> kotakLiRepo.saveAll(list), isIcici);
+            case "Tata_AIG_MI_GS" -> doApplyMap(
+                monthLabel != null ? tataAigRepo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : tataAigRepo.findAllByOrderByTransDateAsc(),
+                pm, list -> tataAigRepo.saveAll(list), isIcici);
+            case "ICICI_Lombard_MI_GS" -> doApplyMap(
+                monthLabel != null ? iciciGsRepo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : iciciGsRepo.findAllByOrderByTransDateAsc(),
+                pm, list -> iciciGsRepo.saveAll(list), isIcici);
+            case "Go_Digit_MI_GS" -> doApplyMap(
+                monthLabel != null ? goDigitGsRepo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : goDigitGsRepo.findAllByOrderByTransDateAsc(),
+                pm, list -> goDigitGsRepo.saveAll(list), isIcici);
+            case "Kotak_MI_GS" -> doApplyMap(
+                monthLabel != null ? kotakGsRepo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : kotakGsRepo.findAllByOrderByTransDateAsc(),
+                pm, list -> kotakGsRepo.saveAll(list), isIcici);
+            case "Go_Digit_INSURE24" -> doApplyMap(
+                monthLabel != null ? goDigitI24Repo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : goDigitI24Repo.findAllByOrderByTransDateAsc(),
+                pm, list -> goDigitI24Repo.saveAll(list), isIcici);
+            case "Kotak_INSURE24" -> doApplyMap(
+                monthLabel != null ? kotakI24Repo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : kotakI24Repo.findAllByOrderByTransDateAsc(),
+                pm, list -> kotakI24Repo.saveAll(list), isIcici);
+            case "Tata_INSURE24" -> doApplyMap(
+                monthLabel != null ? tataI24Repo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : tataI24Repo.findAllByOrderByTransDateAsc(),
+                pm, list -> tataI24Repo.saveAll(list), isIcici);
+            case "ICICI_Lombard_INSURE24" -> doApplyMap(
+                monthLabel != null ? iciciI24Repo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : iciciI24Repo.findAllByOrderByTransDateAsc(),
+                pm, list -> iciciI24Repo.saveAll(list), isIcici);
+            case "Bajaj_INSURE24" -> doApplyMap(
+                monthLabel != null ? bajajI24Repo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : bajajI24Repo.findAllByOrderByTransDateAsc(),
+                pm, list -> bajajI24Repo.saveAll(list), isIcici);
+            case "Go_Digit_DO" -> doApplyMap(
+                monthLabel != null ? goDigitDoRepo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : goDigitDoRepo.findAllByOrderByTransDateAsc(),
+                pm, list -> goDigitDoRepo.saveAll(list), isIcici);
+            case "Bajaj_EW" -> doApplyMap(
+                monthLabel != null ? bajajEwRepo.findByMonthLabelOrderByTransDateAsc(monthLabel)
+                                   : bajajEwRepo.findAllByOrderByTransDateAsc(),
+                pm, list -> bajajEwRepo.saveAll(list), isIcici);
+            default -> { log.warn("[Float] mapLoanId: unknown partner {}", partnerCode); yield new int[]{0, 0}; }
+        };
     }
 
     // ── Cell helpers ──────────────────────────────────────────────

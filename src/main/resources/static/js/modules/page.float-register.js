@@ -10,6 +10,23 @@ Router.register('float-register', function(panel) {
   var currentTab = 'LI';
   var _allRows   = [];
 
+  // PR Register column config — mirrors FloatServiceImpl.PR_CFG
+  var PR_GUIDE = {
+    'Go_Digit_LI':            {pol:'POLICY_NUMBER',  lid:'BOOKINGID_PLANID',       label:'Loan ID'},
+    'Kotak_LI':               {pol:'POLICY_NUMBER',  lid:'BOOKINGID_PLANID',       label:'Loan ID'},
+    'Go_Digit_MI_GS':         {pol:'POLICY_NUMBER',  lid:'VEH_REG_NO',             label:'Car Reg No'},
+    'ICICI_Lombard_MI_GS':    {pol:'POL_NUM_TXT',    lid:'MOTOR_REGISTRATION_NUM', label:'Car Reg No'},
+    'Tata_AIG_MI_GS':         {pol:'policy_no',      lid:'registration_no',        label:'Car Reg No'},
+    'Kotak_MI_GS':            {pol:'POLICY NO',      lid:'Registration Number',    label:'Car Reg No'},
+    'Go_Digit_INSURE24':      {pol:'POLICY_NUMBER',  lid:'VEH_REG_NO',             label:'Car Reg No'},
+    'Kotak_INSURE24':         {pol:'POLICY NO',      lid:'Registration Number',    label:'Car Reg No'},
+    'Tata_INSURE24':          {pol:'policy_no',      lid:'registration_no',        label:'Car Reg No'},
+    'ICICI_Lombard_INSURE24': {pol:'POL_NUM_TXT',    lid:'MOTOR_REGISTRATION_NUM', label:'Car Reg No'},
+    'Bajaj_INSURE24':         {pol:'Policy Number',  lid:'Registration Number',    label:'Car Reg No'},
+    'Go_Digit_DO':            {pol:'POLICY_NUMBER',  lid:'VEH_REG_NO',             label:'Car Reg No'},
+    'Bajaj_EW':               {pol:'Policy Number',  lid:'Registration Number',    label:'Car Reg No'},
+  };
+
   var LI_DEFAULT = [
     {code:'Go_Digit_LI',display:'Go Digit LI',gl:'8503595'},
     {code:'Kotak_LI',   display:'Kotak LI',   gl:'8503598'},
@@ -49,7 +66,7 @@ Router.register('float-register', function(panel) {
       '<div class="hero-sub">Bank statement ledger · LI Float · MI Float</div>' +
       '</div></div>' +
 
-      // Tabs + Export
+      // Tabs + Export + Loan ID Mapping
       '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">' +
       '<div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1.5px solid rgba(11,31,58,0.15)">' +
       '<button id="tab-li" style="padding:9px 28px;font-size:13px;font-weight:600;cursor:pointer;background:#0B1F3A;color:#E8B84B;border:none">🛡️ LI Float</button>' +
@@ -58,6 +75,10 @@ Router.register('float-register', function(panel) {
       '<button id="fl-export-register-btn" style="display:none;padding:9px 20px;font-size:12px;font-weight:600;' +
       'background:#0B1F3A;color:#E8B84B;border:none;border-radius:8px;cursor:pointer;' +
       'align-items:center;gap:6px">📥 Download Float Register</button>' +
+      (Auth.isAdmin() ?
+      '<button id="fl-map-loan-btn" style="padding:9px 20px;font-size:12px;font-weight:600;' +
+      'background:#1E3F6B;color:#E8B84B;border:none;border-radius:8px;cursor:pointer;' +
+      'align-items:center;gap:6px">🔗 Map Loan ID</button>' : '') +
       '</div>' +
 
       // Export modal
@@ -88,6 +109,46 @@ Router.register('float-register', function(panel) {
       '<div id="fl-export-status" style="margin-top:10px;font-size:11px;color:#5A6E88"></div>' +
       '</div>' +
       '</div>' +
+
+      // ── LOAN ID MAPPING MODAL (Admin only) ────────────────────
+      (Auth.isAdmin() ?
+      '<div id="fl-map-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);' +
+      'z-index:9999;align-items:center;justify-content:center">' +
+      '<div style="background:#fff;border-radius:14px;padding:28px 32px;width:460px;max-height:90vh;' +
+      'overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.18)">' +
+      '<div id="fl-map-modal-title" style="font-size:16px;font-weight:700;color:#0B1F3A;margin-bottom:6px">' +
+      '🔗 Map Loan ID from PR Register' +
+      '</div>' +
+      '<div id="fl-map-modal-sub" style="font-size:12px;color:#5A6E88;margin-bottom:18px">' +
+      'Upload a PR Register to map Policy No → Loan ID (LI) or Car Reg No (MI) into float records.' +
+      '</div>' +
+      '<div style="margin-bottom:12px">' +
+      '<div style="font-size:11px;font-weight:600;color:#0B1F3A;margin-bottom:5px">Partner</div>' +
+      '<select id="fl-map-partner" class="form-input" style="width:100%">' +
+      '<option value="">— Select Partner —</option>' +
+      '</select>' +
+      '</div>' +
+      '<div style="margin-bottom:12px">' +
+      '<div style="font-size:11px;font-weight:600;color:#0B1F3A;margin-bottom:4px">Month <span style="font-weight:400;color:#9AA5B4">(optional — leave blank to map all months)</span></div>' +
+      '<input type="month" id="fl-map-month" class="form-input" style="width:100%">' +
+      '</div>' +
+      '<div id="fl-map-guide" style="background:#F2F4F7;border-radius:8px;padding:10px 14px;' +
+      'font-size:11px;color:#5A6E88;margin-bottom:12px;line-height:1.7">' +
+      'Select a partner to see expected PR Register column names.' +
+      '</div>' +
+      '<div style="margin-bottom:16px">' +
+      '<div style="font-size:11px;font-weight:600;color:#0B1F3A;margin-bottom:5px">PR Register File (.xlsx / .xls)</div>' +
+      '<input type="file" id="fl-map-file" accept=".xlsx,.xls" style="font-size:12px;color:var(--navy);width:100%">' +
+      '</div>' +
+      '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+      '<button id="fl-map-cancel-btn" style="padding:8px 20px;font-size:12px;' +
+      'background:#F2F4F7;color:#0B1F3A;border:none;border-radius:7px;cursor:pointer">Cancel</button>' +
+      '<button id="fl-map-submit-btn" style="padding:8px 20px;font-size:12px;font-weight:600;' +
+      'background:#0B1F3A;color:#E8B84B;border:none;border-radius:7px;cursor:pointer">🔗 Map Now</button>' +
+      '</div>' +
+      '<div id="fl-map-status" style="margin-top:12px;font-size:11px;color:#5A6E88"></div>' +
+      '</div>' +
+      '</div>' : '') +
 
       // ── UPLOAD (Admin only) ───────────────────────────────────
       (Auth.isAdmin() ? '<div class="card" style="margin-bottom:16px">' +
@@ -145,34 +206,39 @@ Router.register('float-register', function(panel) {
       '</div>';
 
   // ── Events ──────────────────────────────────────────────────
-  document.getElementById('tab-li').addEventListener('click',        function(){ _switchTab('LI'); });
-  document.getElementById('tab-mi').addEventListener('click', function() {
-    // Full page reload for MI Float (new partner config)
-    Router.go('float-register');
-    setTimeout(function(){ _switchTab('MI'); }, 50);
-  });
+  document.getElementById('tab-li').addEventListener('click', function(){ _switchTab('LI'); });
+  document.getElementById('tab-mi').addEventListener('click', function(){ _switchTab('MI'); });
   document.getElementById('fl-export-register-btn').addEventListener('click', _openExportModal);
   document.getElementById('fl-export-cancel-btn').addEventListener('click', _closeExportModal);
   document.getElementById('fl-export-download-btn').addEventListener('click', _downloadRegister);
-  if (Auth.isAdmin() && document.getElementById('fl-upload-btn')) {
-    document.getElementById('fl-upload-btn').addEventListener('click', _upload);
+  if (Auth.isAdmin()) {
+    if (document.getElementById('fl-upload-btn'))
+      document.getElementById('fl-upload-btn').addEventListener('click', _upload);
+    if (document.getElementById('fl-map-loan-btn'))
+      document.getElementById('fl-map-loan-btn').addEventListener('click', _openMapModal);
+    document.getElementById('fl-map-cancel-btn').addEventListener('click', _closeMapModal);
+    document.getElementById('fl-map-submit-btn').addEventListener('click', _submitMapping);
+    document.getElementById('fl-map-partner').addEventListener('change', _updateMapGuide);
   }
-  document.getElementById('fl-dash-btn').addEventListener('click',   _loadDashboard);
-  document.getElementById('fl-csv-btn').addEventListener('click',    _exportCsv);
+  document.getElementById('fl-dash-btn').addEventListener('click', _loadDashboard);
+  document.getElementById('fl-csv-btn').addEventListener('click',  _exportCsv);
 
   // Period change → auto load dashboard
-  document.getElementById('fl-dash-to').addEventListener('change',   _loadDashboard);
+  document.getElementById('fl-dash-to').addEventListener('change', _loadDashboard);
 
   // Set default period = last 6 months
   (function() {
-    var now  = new Date();
-    var toYM = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
-    var from = new Date(now.getFullYear(), now.getMonth()-5, 1);
+    var now   = new Date();
+    var toYM  = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+    var from  = new Date(now.getFullYear(), now.getMonth()-5, 1);
     var fromYM = from.getFullYear()+'-'+String(from.getMonth()+1).padStart(2,'0');
     document.getElementById('fl-dash-from').value = fromYM;
     document.getElementById('fl-dash-to').value   = toYM;
-    document.getElementById('fl-from').value = fromYM;
-    document.getElementById('fl-to').value   = toYM;
+    // Admin-only upload fields
+    var fFrom = document.getElementById('fl-from');
+    var fTo   = document.getElementById('fl-to');
+    if (fFrom) fFrom.value = fromYM;
+    if (fTo)   fTo.value   = toYM;
   })();
 
   _switchTab('LI');
@@ -180,14 +246,8 @@ Router.register('float-register', function(panel) {
   // ── Export modal ──────────────────────────────────────────────
   // ── Export Modal (MI only — month select → all 12 partners) ──
   async function _openExportModal() {
-    // Update title
     var titleEl = document.getElementById('fl-export-modal-title');
     if (titleEl) titleEl.textContent = '📥 Download MI Float Register';
-
-    // Set default month to current month
-    var now = new Date();
-    var sel = document.getElementById('fl-export-month-sel');
-    if (sel) sel.value = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
 
     var sel = document.getElementById('fl-export-month-sel');
     sel.innerHTML = '<option value="">— Loading months... —</option>';
@@ -273,13 +333,17 @@ Router.register('float-register', function(panel) {
     document.getElementById('tab-li').style.color      = tab==='LI'?'#E8B84B':'#0B1F3A';
     document.getElementById('tab-mi').style.background = tab==='MI'?'#0B1F3A':'#fff';
     document.getElementById('tab-mi').style.color      = tab==='MI'?'#E8B84B':'#0B1F3A';
-    document.getElementById('fl-upload-title').textContent = tab==='LI'?'Upload LI Float':'Upload MI Float';
-    document.getElementById('fl-dash-title').textContent   = tab==='LI'?'LI Float Dashboard (GL 13126064)':'MI Float Dashboard (GL 13126051)';
-    document.getElementById('fl-reg-title').textContent    = tab==='LI'?'LI Float Register':'MI Float Register';
+    var utEl = document.getElementById('fl-upload-title'); // admin-only
+    if (utEl) utEl.textContent = tab==='LI'?'Upload LI Float':'Upload MI Float';
+    document.getElementById('fl-dash-title').textContent = tab==='LI'?'LI Float Dashboard (GL 13126064)':'MI Float Dashboard (GL 13126051)';
+    document.getElementById('fl-reg-title').textContent  = tab==='LI'?'LI Float Register':'MI Float Register';
     var expBtn = document.getElementById('fl-export-register-btn');
     if (expBtn) expBtn.style.display = tab==='MI' ? 'flex' : 'none';
+    var mapBtn = document.getElementById('fl-map-loan-btn'); // admin-only
+    if (mapBtn) mapBtn.textContent = tab==='LI' ? '🔗 Map Loan ID' : '🔗 Map Car Reg No';
     _fillPartners('fl-partner',      tab);
     _fillPartners('fl-dash-partner', tab);
+    if (Auth.isAdmin()) _fillMapPartners(tab);
   }
 
   async function _fillPartners(selId, tab) {
@@ -517,10 +581,12 @@ Router.register('float-register', function(panel) {
         return;
       }
 
-      var tbl='<table class="data-table" style="min-width:900px;font-size:11px">'
+      var loanHdr = currentTab==='LI' ? 'Loan ID' : 'Car Reg No';
+      var tbl='<table class="data-table" style="min-width:1000px;font-size:11px">'
           +'<thead><tr>'
           +'<th>Month</th><th>Trans Date</th><th>Float Type</th><th>Booking Type</th>'
           +'<th style="max-width:200px">Transaction Details</th><th>Policy No</th>'
+          +'<th>'+loanHdr+'</th>'
           +'<th style="text-align:right">Credit (₹)</th>'
           +'<th style="text-align:right">Debit (₹)</th>'
           +'<th style="text-align:right">Balance (₹)</th>'
@@ -530,6 +596,7 @@ Router.register('float-register', function(panel) {
         var bal=Number(r.balance||0);
         var cr=Number(r.creditAmt||0);
         var dr=Number(r.debitAmt||0);
+        var hasLoan = r.loanId && r.loanId.trim();
         tbl+='<tr>'
             +'<td style="white-space:nowrap;color:var(--muted);font-size:10px">'+(r.monthLabel||'')+'</td>'
             +'<td style="white-space:nowrap">'+(r.transDate||'')+'</td>'
@@ -537,6 +604,7 @@ Router.register('float-register', function(panel) {
             +'<td style="white-space:nowrap">'+(r.bookingType||'')+'</td>'
             +'<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px" title="'+(r.transactionDetails||'')+'">'+(r.transactionDetails||'')+'</td>'
             +'<td style="font-size:10px">'+(r.policyNumber||'')+'</td>'
+            +'<td style="font-size:10px;color:'+(hasLoan?'#0B1F3A':'#C4CADB')+'">'+(hasLoan?r.loanId:'—')+'</td>'
             +'<td style="text-align:right;color:#1D6F42;font-weight:'+(cr>0?'600':'400')+'">'+(cr>0?INR(cr):'')+'</td>'
             +'<td style="text-align:right;color:#8B2121;font-weight:'+(dr>0?'600':'400')+'">'+(dr>0?INR(dr):'')+'</td>'
             +'<td style="text-align:right;font-weight:600;color:'+(bal<0?'#8B2121':'#0B1F3A')+'">'+INR(bal)+'</td>'
@@ -568,6 +636,117 @@ Router.register('float-register', function(panel) {
     var p=document.getElementById('fl-dash-partner').value||'Float';
     a.download=p+'_Register.csv';
     a.click();
+  }
+
+  // ── LOAN ID / CAR REG NO MAPPING ─────────────────────────────
+  function _fillMapPartners(tab) {
+    var sel = document.getElementById('fl-map-partner');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— Select Partner —</option>';
+    var list = tab==='LI'
+      ? LI_DEFAULT
+      : Object.values(MI_DEFAULT).flat().filter(function(p){ return p.code !== 'United_MI_GS'; });
+    list.forEach(function(p){
+      var opt = document.createElement('option');
+      opt.value = p.code;
+      opt.textContent = (p.display||p.code) + ' (GL: '+p.gl+')';
+      sel.appendChild(opt);
+    });
+    // Update guide for first option if pre-selected
+    _updateMapGuide();
+  }
+
+  function _updateMapGuide() {
+    var partner = document.getElementById('fl-map-partner').value;
+    var guideEl = document.getElementById('fl-map-guide');
+    if (!guideEl) return;
+    var g = PR_GUIDE[partner];
+    if (g) {
+      guideEl.innerHTML =
+        '<strong style="color:#0B1F3A">Expected PR Register columns:</strong><br>' +
+        '📋 Policy Number column: <code style="background:#E8EDF3;padding:1px 5px;border-radius:3px">' + g.pol + '</code><br>' +
+        '🔑 ' + g.label + ' column: <code style="background:#E8EDF3;padding:1px 5px;border-radius:3px">' + g.lid + '</code>';
+    } else {
+      guideEl.textContent = 'Select a partner to see expected PR Register column names.';
+    }
+  }
+
+  function _openMapModal() {
+    var titleEl = document.getElementById('fl-map-modal-title');
+    var subEl   = document.getElementById('fl-map-modal-sub');
+    if (currentTab === 'LI') {
+      if (titleEl) titleEl.textContent = '🔗 Map Loan ID from PR Register';
+      if (subEl)   subEl.textContent   = 'Upload PR Register to populate Loan ID in LI float records by matching Policy No → BOOKINGID_PLANID.';
+    } else {
+      if (titleEl) titleEl.textContent = '🔗 Map Car Reg No from PR Register';
+      if (subEl)   subEl.textContent   = 'Upload PR Register to populate Car Reg No in MI float records by matching Policy No → Vehicle Reg No. (United is excluded — its float already contains reg no.)';
+    }
+    _fillMapPartners(currentTab);
+    // Default month = current dashboard period end
+    var mVal = document.getElementById('fl-dash-to').value;
+    var mapMonth = document.getElementById('fl-map-month');
+    if (mapMonth && mVal) mapMonth.value = mVal;
+    var fileEl = document.getElementById('fl-map-file');
+    if (fileEl) fileEl.value = '';
+    document.getElementById('fl-map-status').textContent = '';
+    document.getElementById('fl-map-modal').style.display = 'flex';
+  }
+
+  function _closeMapModal() {
+    document.getElementById('fl-map-modal').style.display = 'none';
+  }
+
+  async function _submitMapping() {
+    var partner   = document.getElementById('fl-map-partner').value;
+    var monthRaw  = document.getElementById('fl-map-month').value;    // "YYYY-MM" or ""
+    var file      = document.getElementById('fl-map-file').files[0];
+    var status    = document.getElementById('fl-map-status');
+    var btn       = document.getElementById('fl-map-submit-btn');
+
+    if (!partner) { status.innerHTML = _alert('warn','⚠️ Select a partner.'); return; }
+    if (!file)    { status.innerHTML = _alert('warn','⚠️ Select a PR Register file.'); return; }
+
+    // Convert "YYYY-MM" → "Apr'26" label if provided
+    var monthLabel = '';
+    if (monthRaw) {
+      var parts = monthRaw.split('-');
+      monthLabel = MO[parseInt(parts[1])-1] + "'" + String(parseInt(parts[0])%100).padStart(2,'0');
+    }
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Mapping…';
+    status.innerHTML = _alert('warn','⏳ Parsing PR Register and updating float records...');
+
+    try {
+      var r = await API.Float.mapLoanId(file, partner, monthLabel||null);
+      var d = (r && r.data) ? r.data : {};
+      var mapCount = d.mapped   || 0;
+      var notFound = d.notFound || 0;
+      var prRows   = d.prRows   || 0;
+      var total    = d.floatRows|| 0;
+      status.innerHTML = _alert('success',
+        '✅ Mapping complete for <strong>' + partner + '</strong>'
+        + (monthLabel ? ' · Month: '+monthLabel : ' · All months')
+        + '<br>PR Register entries: <strong>'+prRows+'</strong>'
+        + ' · Float rows scanned: <strong>'+total+'</strong>'
+        + ' · <span style="color:#1D6F42">Mapped: <strong>'+mapCount+'</strong></span>'
+        + ' · <span style="color:#8A6010">Not found: <strong>'+notFound+'</strong></span>'
+      );
+      // Reload register to show updated loanId values
+      if (mapCount > 0) {
+        var dashPartner = document.getElementById('fl-dash-partner').value;
+        if (dashPartner === partner) {
+          var fromLbl = toLabel(document.getElementById('fl-dash-from').value);
+          var toLbl   = toLabel(document.getElementById('fl-dash-to').value);
+          _loadRegister(partner, fromLbl, toLbl);
+        }
+      }
+    } catch(e) {
+      status.innerHTML = _alert('error', '❌ ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔗 Map Now';
+    }
   }
 
   function _alert(type,msg){

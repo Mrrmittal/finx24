@@ -251,6 +251,16 @@ const API = (() => {
     getPartners: async function(category) {
       return get('/float/partners?category=' + category);
     },
+    getMonths: async function(partnerCode) {
+      return get('/float/months?partnerCode=' + encodeURIComponent(partnerCode));
+    },
+    mapLoanId: async function(file, partnerCode, monthLabel) {
+      const form = new FormData();
+      form.append('file',        file);
+      form.append('partnerCode', partnerCode);
+      if (monthLabel) form.append('monthLabel', monthLabel);
+      return upload('/float/map-loan-id', form);
+    },
   };
 
   return {

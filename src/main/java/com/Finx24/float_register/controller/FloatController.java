@@ -117,6 +117,27 @@ public class FloatController {
                 floatService.getDashboard(partnerCode, month)));
     }
 
+    // ── Map Loan ID / Car Reg No from PR Register ─────────────────
+    @PostMapping("/map-loan-id")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> mapLoanId(
+            @RequestParam("file")                             MultipartFile file,
+            @RequestParam("partnerCode")                      String partnerCode,
+            @RequestParam(value="monthLabel", required=false) String monthLabel
+    ) {
+        try {
+            log.info("[Float] mapLoanId partner={} month={}", partnerCode, monthLabel);
+            return ResponseEntity.ok(ApiResponse.ok(
+                    floatService.mapLoanId(file, partnerCode, monthLabel)));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage(), "MAP_LOAN_ID_CONFIG_ERROR"));
+        } catch (Exception e) {
+            log.error("[Float] mapLoanId error: {}", e.getMessage());
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage(), "MAP_LOAN_ID_ERROR"));
+        }
+    }
+
     // ── Partner config for frontend ────────────────────────────────
     @GetMapping("/partners")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getPartners(

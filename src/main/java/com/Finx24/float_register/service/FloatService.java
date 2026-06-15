@@ -17,4 +17,15 @@ public interface FloatService {
     List<String> getAvailableMonths(String partnerCode);
     List<String> getAvailablePeriods(String partnerCode);
     Map<String, Object> getDashboard(String partnerCode, String filter);
+
+    /**
+     * Maps Loan ID (LI) or Car Reg No (MI) from a PR Register Excel file
+     * into existing float records by matching policyNumber.
+     * United_MI_GS is excluded — its float data already carries the reg no.
+     *
+     * @param monthLabel optional — if supplied, only records for that month are updated;
+     *                   if null/blank, all months for the partner are updated
+     */
+    Map<String, Object> mapLoanId(MultipartFile file, String partnerCode,
+                                   String monthLabel) throws IOException;
 }
