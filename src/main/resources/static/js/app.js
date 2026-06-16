@@ -38,6 +38,20 @@ function newEntry() {
   alert('New entry form coming soon.');
 }
 
+/* ── Dark mode toggle ──────────────────────────────────────────── */
+function toggleDark() {
+  const isDark = document.body.classList.toggle('dark');
+  localStorage.setItem('finx24_dark', isDark ? '1' : '0');
+  const btn = document.getElementById('btn-dark-mode');
+  if (btn) btn.textContent = isDark ? '☀' : '🌙';
+}
+// Apply saved preference (app.js loads at bottom of body, DOM is ready)
+if (localStorage.getItem('finx24_dark') === '1') {
+  document.body.classList.add('dark');
+  const _dmBtn = document.getElementById('btn-dark-mode');
+  if (_dmBtn) _dmBtn.textContent = '☀';
+}
+
 /* ── App init ────────────────────────────────────────────────── */
 (function init() {
 

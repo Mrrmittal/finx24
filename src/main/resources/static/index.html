@@ -31,8 +31,11 @@
   <!-- Chart.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 
-  <!-- SheetJS — Excel parsing (browser fallback for small files) -->
+  <!-- SheetJS — Excel parsing / reading -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <!-- ExcelJS — styled Excel export (supports fills, fonts, freeze, formulas) -->
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 
   <!-- Stylesheets — order matters -->
   <link rel="stylesheet" href="css/base.css" />
@@ -56,6 +59,7 @@
       <div class="tb-right">
         <span class="live-badge">Live</span>
         <span class="date-b" id="date-b"></span>
+        <button id="btn-dark-mode" title="Toggle dark mode" onclick="toggleDark()">🌙</button>
         <button class="btn-o" onclick="exportCurrent()">Export</button>
         <button class="btn-g" onclick="newEntry()">+ New Entry</button>
       </div>

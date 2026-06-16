@@ -163,11 +163,15 @@ function _liRunRecon(floatRows, floatAllRows, prRows, hanaRows, monthEntries) {
         classified.filter(r => r._REM === 'Last Month Credit').map(r => r._POL)
     );
     const lmcDebitMap = {};
+    const lmcDebitMonthMap = {};
     for (const r of floatAllRows) {
         const pol = _k(_g(r, 'POLICY_NUMBER', 'POLICY_NO', 'POLICY'));
         const deb = _n(_g(r, 'DEBIT_AMT', 'DEBIT_AMOUNT', 'DEBIT'));
         if (lmcPolicies.has(pol) && deb > 0) {
             lmcDebitMap[pol] = (lmcDebitMap[pol] || 0) + deb;
+            if (!lmcDebitMonthMap[pol])
+                lmcDebitMonthMap[pol] = _g(r,'MONTHS','Months','MONTH_LABEL')
+                    || _dt(_g(r,'TRANS_DATE','TRANSACTION_DATE','DATE'));
         }
     }
 
@@ -264,7 +268,7 @@ function _liRunRecon(floatRows, floatAllRows, prRows, hanaRows, monthEntries) {
     const byC = {};
     for (const r of cancelEnriched) {
         const id = r._LOAN_ID || r._POL;
-        if (!byC[id]) byC[id] = { cH:0,cP:0,dH:0,dP:0, polH:'',polP:'', date:'', rtype:r._REM };
+        if (!byC[id]) byC[id] = { cH:0,cP:0,dH:0,dP:0, polH:'',polP:'', date:'', rtype:r._REM, debitMo:'' };
         const t = r._TYPE;
         if (t === 'health') {
             byC[id].cH  += r._CRED;
@@ -276,6 +280,10 @@ function _liRunRecon(floatRows, floatAllRows, prRows, hanaRows, monthEntries) {
             byC[id].polP = byC[id].polP || r._POL;
         }
         byC[id].date = byC[id].date || _g(r, 'TRANS_DATE', 'TRANSACTION_DATE', 'DATE');
+        if (!byC[id].debitMo)
+            byC[id].debitMo = r._REM === 'Last Month Credit'
+                ? (lmcDebitMonthMap[r._POL] || '')
+                : (_g(r,'MONTHS','Months','MONTH_LABEL') || '');
     }
 
     const cancelRows = Object.entries(byC).map(([id, c]) => {
@@ -286,6 +294,7 @@ function _liRunRecon(floatRows, floatAllRows, prRows, hanaRows, monthEntries) {
         return {
             'Loan ID':               id,
             'Policy Issue Date':     _dt(c.date),
+            'Debit Month':           c.debitMo || '',
             'Type':                  c.rtype,
             'Policy No - Health':    c.polH,
             'Credit Health':         Math.round(c.cH),
@@ -331,87 +340,321 @@ function _liRunRecon(floatRows, floatAllRows, prRows, hanaRows, monthEntries) {
     return { issuedRows, cancelRows, topupRows, queries, summary };
 }
 
-/** Build export XLSX using SheetJS (client-side, for download) */
-function _liExportXLSX(data, label) {
-    const wb = XLSX.utils.book_new();
+/** @deprecated replaced below */ function _liExportXLSX_OLD_SHEETJS(data,label){ return null; }
+/** Build export XLSX — ExcelJS: Aptos 8, navy headers, white fill, freeze, formulas */
+async function _liExportXLSX(data, label) {
+    const { issuedRows, cancelRows, topupRows, queries, summary } = data;
 
-    function addSheet(name, rows, cols) {
-        if (!rows.length) return;
-        const wsData = [cols.map(c=>c.label), ...rows.map(r => cols.map(c => r[c.key] ?? ''))];
-        const ws = XLSX.utils.aoa_to_sheet(wsData);
-        XLSX.utils.book_append_sheet(wb, ws, name);
+    // ── Fallback if ExcelJS CDN failed to load ───────────────────────
+    if (!window.ExcelJS) {
+        console.warn('[LI] ExcelJS not loaded');
+        const wb2 = XLSX.utils.book_new();
+        const fb = (n,r,c) => { if(r.length) XLSX.utils.book_append_sheet(wb2,XLSX.utils.aoa_to_sheet([c.map(x=>x.label),...r.map(ro=>c.map(x=>ro[x.key]??''))]),n); };
+        fb('Issued Cases',issuedRows,[{key:'Loan ID',label:'Loan ID'},{key:'_FINAL_STATUS',label:'Final Status'}]);
+        fb('LI Queries',  queries,   [{key:'Loan ID',label:'Loan ID'},{key:'_FINAL_STATUS',label:'Final Status'}]);
+        fb('Cancellation',cancelRows,[{key:'Loan ID',label:'Loan ID'},{key:'_CANCEL_REM',  label:'Remarks'}]);
+        return XLSX.write(wb2,{type:'array',bookType:'xlsx'});
     }
 
-    // v5: 18-column Issued Cases (matches notebook v5 exactly)
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'FinX24';
+
+    // ── Palette ──────────────────────────────────────────────────────
+    const F8    = { name:'Aptos', size:8 };
+    const FH    = { name:'Aptos', size:8, bold:true, color:{ argb:'FFFFFFFF' } };
+    const FILH  = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF1E3A5F' } };
+    const FILW  = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFFFFF' } };
+    const FILA  = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFF0F4F9' } };
+    const ALN_C = { horizontal:'center', vertical:'middle' };
+    const ALN_L = { horizontal:'left',   vertical:'middle' };
+    const ALN_R = { horizontal:'right',  vertical:'middle' };
+    const ALN_H = { horizontal:'center', vertical:'middle', wrapText:true };
+    const ST = {
+        ok:  { fill:{ type:'pattern',pattern:'solid',fgColor:{ argb:'FFC6EFCE' } }, font:{ name:'Aptos',size:8,bold:true,color:{ argb:'FF276221' } } },
+        err: { fill:{ type:'pattern',pattern:'solid',fgColor:{ argb:'FFFFC7CE' } }, font:{ name:'Aptos',size:8,bold:true,color:{ argb:'FF9C0006' } } },
+        amb: { fill:{ type:'pattern',pattern:'solid',fgColor:{ argb:'FFFFEB9C' } }, font:{ name:'Aptos',size:8,bold:true,color:{ argb:'FF9C6500' } } },
+        blu: { fill:{ type:'pattern',pattern:'solid',fgColor:{ argb:'FFDEEBF7' } }, font:{ name:'Aptos',size:8,bold:true,color:{ argb:'FF1F497D' } } },
+    };
+    function _ss(val) {
+        const v = String(val||'').toLowerCase();
+        if (v === 'match' || v.startsWith('knocked off')) return ST.ok;
+        if (v.includes('mismatch') || v.includes('shortfall') || v.includes('excess')) return ST.err;
+        if (v.includes('cancel') || v.includes('missing') || v.includes('not disbursed') || v.includes('verify')) return ST.amb;
+        return ST.blu;
+    }
+
+    // ── Sheet factory ────────────────────────────────────────────────
+    function _addSheet(name, rows, cols, opts) {
+        if (!rows || !rows.length) return;
+        opts = opts || {};
+        const fCols  = opts.formCols   || {};
+        const sCols  = new Set(opts.statusCols || []);
+        const nCols  = new Set(opts.numCols    || []);
+        const widths = opts.widths || cols.map(c => Math.max(c.label.length + 3, 12));
+
+        const ws = wb.addWorksheet(name, {
+            views: [{ state:'frozen', ySplit:1, topLeftCell:'A2' }],
+        });
+        ws.columns = widths.map(w => ({ width:w, style:{ font:F8 } }));
+
+        // Header
+        const hRow = ws.addRow(cols.map(c => c.label));
+        hRow.height = 22;
+        hRow.eachCell({ includeEmpty:true }, cell => {
+            cell.font = FH; cell.fill = FILH; cell.alignment = ALN_H;
+        });
+
+        // Data rows
+        rows.forEach((row, ri) => {
+            const er      = ri + 2;
+            const defFill = ri % 2 === 0 ? FILW : FILA;
+            const vals    = cols.map((col, ci) => {
+                const raw = col.key === 'IMD Code' ? (row[col.key] || '1053878') : (row[col.key] ?? '');
+                return fCols[ci] ? { formula: fCols[ci](er), result: typeof raw === 'number' ? raw : 0 } : raw;
+            });
+            const dRow = ws.addRow(vals);
+            dRow.height = 15;
+            dRow.eachCell({ includeEmpty:true }, (cell, cn) => {
+                const ci = cn - 1;
+                if (sCols.has(ci)) {
+                    const st = _ss(row[cols[ci].key]);
+                    cell.fill = st.fill; cell.font = st.font; cell.alignment = ALN_C;
+                } else {
+                    cell.fill = defFill;
+                    cell.font = { ...F8 };
+                    if (nCols.has(ci)) { cell.numFmt = '#,##0'; cell.alignment = ALN_R; }
+                    else               { cell.alignment = ALN_L; }
+                }
+            });
+        });
+        ws.autoFilter = { from:{ row:1, column:1 }, to:{ row:1, column:cols.length } };
+    }
+
+    // ── A. ISSUED CASES — A=ID B=IMD C=Date D=PolH E=DebitH F=PolPA G=DebitPA
+    //    H=TotalDedn(=E+G) I=PRCheck J=DisbDate K=SAPAmt L=Diff(=K-H) M=Status N=StMo O=Final
     const issuedCols = [
-        {key:'Loan ID',                  label:'Loan ID'},
-        {key:'IMD Code',                 label:'IMD Code'},
-        {key:'Policy Issue Date',        label:'Policy Issue Date'},
-        {key:'Policy No - Health',       label:'Policy No - Health'},
-        {key:'Debit Float (Health)',      label:'Debit Float (Health)'},
-        {key:'Premium - Health',         label:'Premium - Health'},
-        {key:'Policy No - PA',           label:'Policy No - PA'},
-        {key:'Debit Float (PA)',          label:'Debit Float (PA)'},
-        {key:'Premium - PA',             label:'Premium - PA'},
-        {key:'Total Deduction (Float)',   label:'Total Deduction (Float)'},
-        {key:'Gross Premium (PR)',        label:'Gross Premium (PR)'},          // v5
-        {key:'Float vs PR Check',         label:'Float vs PR Check'},           // v5
-        {key:'Disbursal Date',            label:'Disbursal Date'},
-        {key:'LI Amount (SAP)',           label:'LI Amount (SAP)'},
-        {key:'Difference',                label:'Difference'},
-        {key:'Loan Status',               label:'Loan Status'},
-        {key:'Status Month',              label:'Status Month'},                // v5
-        {key:'_FINAL_STATUS',             label:'Final Status'},
+        { key:'Loan ID',                label:'Loan ID'              },
+        { key:'IMD Code',               label:'IMD Code'             },
+        { key:'Policy Issue Date',      label:'Issue Date'           },
+        { key:'Policy No - Health',     label:'Policy No - Health'   },
+        { key:'Debit Float (Health)',   label:'Debit Float H'        },
+        { key:'Policy No - PA',         label:'Policy No - PA'       },
+        { key:'Debit Float (PA)',        label:'Debit Float PA'       },
+        { key:'Total Deduction (Float)',label:'Total Deduction'      },
+        { key:'Float vs PR Check',      label:'PR Check'             },
+        { key:'Disbursal Date',         label:'Disbursal Date'       },
+        { key:'LI Amount (SAP)',        label:'LI Amount SAP'        },
+        { key:'Difference',             label:'Difference'           },
+        { key:'Loan Status',            label:'Loan Status'          },
+        { key:'Status Month',           label:'Status Month'         },
+        { key:'_FINAL_STATUS',          label:'Final Status'         },
     ];
-    addSheet('Issued Cases', data.issuedRows, issuedCols);
-    addSheet('LI Queries',   data.queries,    issuedCols);
+    const issuedOpts = {
+        formCols:   { 7: er=>`E${er}+G${er}`, 11: er=>`K${er}-H${er}` },
+        statusCols: [8, 14],
+        numCols:    [4, 6, 7, 10, 11],
+        widths:     [20,10,11,22,13,22,13,15,9,12,14,11,24,11,30],
+    };
+    _addSheet('Issued Cases', issuedRows, issuedCols, issuedOpts);
+    _addSheet('LI Queries',   queries,    issuedCols, issuedOpts);
 
-    const cancelCols = [
-        {key:'Loan ID',label:'Loan ID'},{key:'Policy Issue Date',label:'Policy Issue Date'},
-        {key:'Type',label:'Type'},{key:'Policy No - Health',label:'Policy No - Health'},
-        {key:'Credit Health',label:'Credit Health'},{key:'Debit Health (Original)',label:'Debit Health (Original)'},
-        {key:'Policy No - PA',label:'Policy No - PA'},{key:'Credit PA',label:'Credit PA'},
-        {key:'Debit PA (Original)',label:'Debit PA (Original)'},
-        {key:'Total Credit',label:'Total Credit'},{key:'Total Debit',label:'Total Debit'},
-        {key:'Difference',label:'Difference'},{key:'_CANCEL_REM',label:'Remarks'},
-    ];
-    addSheet('Cancellation', data.cancelRows, cancelCols);
-    addSheet('Top Up', data.topupRows, [
-        {key:'Date',label:'Date'},{key:'Type',label:'Type'},
-        {key:'Details',label:'Details'},{key:'Credit',label:'Credit'},{key:'Debit',label:'Debit'},
-    ]);
+    // ── B. CANCELLATION — A=ID B=IssueDate C=DebitMonth D=Type E=PolH F=CrH G=DbHOrig
+    //    H=PolPA I=CrPA J=DbPAOrig K=TotalCredit(=F+I) L=TotalDebit(=G+J) M=Diff(=K-L) N=Remarks
+    _addSheet('Cancellation', cancelRows, [
+        { key:'Loan ID',                 label:'Loan ID'          },
+        { key:'Policy Issue Date',       label:'Issue Date'       },
+        { key:'Debit Month',             label:'Debit Month'      },
+        { key:'Type',                    label:'Type'             },
+        { key:'Policy No - Health',      label:'Policy Health'    },
+        { key:'Credit Health',           label:'Credit H'         },
+        { key:'Debit Health (Original)', label:'Debit H Orig'     },
+        { key:'Policy No - PA',          label:'Policy PA'        },
+        { key:'Credit PA',              label:'Credit PA'         },
+        { key:'Debit PA (Original)',     label:'Debit PA Orig'    },
+        { key:'Total Credit',           label:'Total Credit'      },
+        { key:'Total Debit',            label:'Total Debit'       },
+        { key:'Difference',             label:'Difference'        },
+        { key:'_CANCEL_REM',            label:'Remarks'           },
+    ], {
+        formCols:   { 10: er=>`F${er}+I${er}`, 11: er=>`G${er}+J${er}`, 12: er=>`K${er}-L${er}` },
+        statusCols: [13],
+        numCols:    [5,6,8,9,10,11,12],
+        widths:     [20,11,12,14,20,11,13,20,11,13,13,12,12,28],
+    });
 
-    return XLSX.write(wb, { type:'array', bookType:'xlsx' });
+    // ── C. TOP UP ─────────────────────────────────────────────────────
+    _addSheet('Top Up', topupRows, [
+        { key:'Date',    label:'Date'                },
+        { key:'Type',    label:'Type'                },
+        { key:'Details', label:'Transaction Details' },
+        { key:'Credit',  label:'Credit'              },
+        { key:'Debit',   label:'Debit'               },
+    ], { numCols:[3,4], widths:[12,16,44,12,12] });
+
+    // ── D. SUMMARY PIVOT ──────────────────────────────────────────────
+    (function() {
+        const ws = wb.addWorksheet('Summary');
+        ws.columns = [{ width:44 }, { width:14 }, { width:10 }];
+
+        function _hRow(a, b, c) {
+            const row = ws.addRow([a, b === undefined ? '' : b, c === undefined ? '' : c]);
+            row.height = 20;
+            row.eachCell({ includeEmpty:true }, (cell, cn) => {
+                cell.font = FH; cell.fill = FILH;
+                cell.alignment = cn === 1 ? ALN_L : ALN_C;
+                if (cn === 2) cell.numFmt = '#,##0';
+            });
+            return row;
+        }
+        function _dRow(lbl, cnt, pct, stKey, formula) {
+            const st  = stKey ? ST[stKey] : null;
+            const row = ws.addRow([lbl, cnt, pct == null ? '' : pct + '%']);
+            row.height = 16;
+            const c1 = row.getCell(1), c2 = row.getCell(2), c3 = row.getCell(3);
+            c1.font = st ? st.font : F8;   c1.fill = st ? st.fill : FILW;   c1.alignment = ALN_L;
+            c2.font = st ? { ...st.font } : { ...F8, bold:true };
+            c2.fill = st ? st.fill : FILW; c2.alignment = ALN_R; c2.numFmt = '#,##0';
+            if (formula) c2.value = { formula, result: cnt };
+            c3.font = st ? st.font : F8;   c3.fill = st ? st.fill : FILW;   c3.alignment = ALN_C;
+            return row;
+        }
+        function _blk() {
+            const r = ws.addRow(['','','']); r.height = 6;
+            r.eachCell({ includeEmpty:true }, c => { c.fill = FILW; c.font = F8; });
+        }
+
+        const iMax   = issuedRows.length + 1;
+        const cMax   = cancelRows.length  + 1;
+        const iTotal = issuedRows.length  || 1;
+
+        const t1 = ws.addRow([`LI Float Reconciliation — ${label}`, '', '']);
+        t1.height = 26;
+        ws.mergeCells(`A${t1.number}:C${t1.number}`);
+        t1.getCell(1).font = { name:'Aptos', size:12, bold:true, color:{ argb:'FF1E3A5F' } };
+        t1.getCell(1).fill = FILW; t1.getCell(1).alignment = ALN_L;
+        _blk();
+
+        _hRow('ISSUED CASES — Final Status', 'Count', '%');
+        [
+            { lbl:'Match',                             key:'ok',  cnt: summary.match,        pat:'Match'          },
+            { lbl:'Amount Mismatch — SAP Lower',  key:'err', cnt: issuedRows.filter(x=>x['_FINAL_STATUS'].includes('SAP Lower')).length,        pat:'SAP Lower'      },
+            { lbl:'Amount Mismatch — Float Lower',key:'err', cnt: issuedRows.filter(x=>x['_FINAL_STATUS'].includes('Float Lower')).length,      pat:'Float Lower'    },
+            { lbl:'Loan Cancelled — Policy to Cancel', key:'amb', cnt: summary.cancelled,    pat:'Cancelled'      },
+            { lbl:'Loan Not Disbursed',                key:'amb', cnt: summary.notDisbursed, pat:'Not Disbursed'  },
+            { lbl:'Active — SAP Data Missing',    key:'blu', cnt: issuedRows.filter(x=>x['_FINAL_STATUS'].includes('SAP Data Missing')).length, pat:'SAP Data Missing'},
+        ].forEach(st => {
+            const row = _dRow(st.lbl, st.cnt, Math.round(st.cnt/iTotal*100), st.key,
+                `COUNTIF('Issued Cases'!O2:O${iMax},"*${st.pat}*")`);
+            row.getCell(3).fill = ST[st.key].fill;
+            row.getCell(3).font = ST[st.key].font;
+        });
+        _hRow('TOTAL ISSUED LOANS', issuedRows.length);
+        _blk();
+
+        _hRow('PR CHECK', 'Count', '');
+        _dRow('Float = PR (Match)',     summary.prMatch,    null, 'ok',  `COUNTIF('Issued Cases'!I2:I${iMax},"Match")`);
+        _dRow('Float ≠ PR (Mismatch)', summary.prMismatch, null, 'err', `COUNTIF('Issued Cases'!I2:I${iMax},"Mismatch")`);
+        _blk();
+
+        _hRow('CANCELLATION', 'Count', '');
+        [
+            { lbl:'Knocked Off — Debit & Credit Match', key:'ok',  cnt: cancelRows.filter(x=>(x['_CANCEL_REM']||'').includes('Knocked Off')).length, pat:'Knocked Off' },
+            { lbl:'Shortfall — Refunded Less',           key:'err', cnt: cancelRows.filter(x=>(x['_CANCEL_REM']||'').includes('Shortfall')).length,   pat:'Shortfall'   },
+            { lbl:'Excess Credit — Investigate',         key:'amb', cnt: cancelRows.filter(x=>(x['_CANCEL_REM']||'').includes('Excess')).length,       pat:'Excess'      },
+        ].forEach(cs => _dRow(cs.lbl, cs.cnt, null, cs.key, `COUNTIF('Cancellation'!N2:N${cMax},"*${cs.pat}*")`));
+        _hRow('TOTAL CANCELLATIONS', cancelRows.length);
+        _blk();
+
+        _hRow('FLOAT KPIs', 'Value', '');
+        const fdr = _dRow('Total Float Deduction', summary.totalFloat, null, null, `SUM('Issued Cases'!H2:H${iMax})`);
+        fdr.getCell(2).numFmt = '#,##0';
+        _dRow('Match %',        summary.matchPct, null, null);
+        _dRow('Top Up Entries', topupRows.length, null, null);
+
+        ws.eachRow(row => {
+            row.eachCell({ includeEmpty:true }, cell => {
+                if (!cell.fill || !cell.fill.fgColor) cell.fill = FILW;
+                if (!cell.font || !cell.font.name)    cell.font = F8;
+            });
+        });
+    })();
+
+    return wb.xlsx.writeBuffer();
 }
 
 /* ================================================================
-   LOAN INSURANCE — PAGE REGISTRATION
+   LOAN INSURANCE — PAGE REGISTRATION  (v6 — DB-first flow)
    ================================================================ */
 
 Router.register('loanins', function(panel) {
-    let _data = null; // holds last recon result
+    let _data     = null;
+    let _prMonths = [];   // months in selected period, e.g. ["Apr'25","May'25"]
+
+    // ── Month helpers ──────────────────────────────────────────────
+    const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    function _ymToLabel(ym) {        // "2025-04" → "Apr'25"
+        if (!ym) return '';
+        const d = new Date(ym + '-01');
+        return _MO[d.getMonth()] + "'" + String(d.getFullYear()).slice(-2);
+    }
+
+    function _normLbl(s) {           // "Apr 2025" or "April'25" → "Apr'25"
+        if (!s) return '';
+        s = String(s).trim();
+        const m1 = s.match(/^([A-Za-z]+)\s+(\d{4})$/);
+        if (m1) return (m1[1].slice(0,3).charAt(0).toUpperCase()+m1[1].slice(1,3).toLowerCase())+"'"+m1[2].slice(-2);
+        const m2 = s.match(/^([A-Za-z]+)'(\d{2})$/);
+        if (m2) return (m2[1].slice(0,3).charAt(0).toUpperCase()+m2[1].slice(1,3).toLowerCase())+"'"+m2[2];
+        return s;
+    }
+
+    function _monthsInRange(fromLbl, toLbl) {
+        const parse = lbl => {
+            const m = lbl.match(/([A-Za-z]+)'(\d+)/);
+            if (!m) return null;
+            const mo = _MO.findIndex(x => x.toLowerCase() === m[1].slice(0,3).toLowerCase());
+            return mo < 0 ? null : { mo, yr: 2000 + parseInt(m[2]) };
+        };
+        const from = parse(fromLbl), to = parse(toLbl || fromLbl);
+        if (!from || !to) return [fromLbl];
+        const out = [];
+        let { mo, yr } = from;
+        while (yr < to.yr || (yr === to.yr && mo <= to.mo)) {
+            out.push(_MO[mo] + "'" + String(yr).slice(-2));
+            if (++mo > 11) { mo = 0; yr++; }
+        }
+        return out;
+    }
+
+    // ── Default period inputs to current month ─────────────────────
+    const _now    = new Date();
+    const _curYM  = _now.getFullYear() + '-' + String(_now.getMonth()+1).padStart(2,'0');
+    const _prevYM = (function(){
+        const d = new Date(_now.getFullYear(), _now.getMonth()-1, 1);
+        return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    })();
 
     panel.innerHTML = `
-    <!-- Module hero -->
+    <!-- Hero -->
     <div class="module-hero">
       <div>
         <div class="hero-label">Reconciliation</div>
         <div class="hero-title">Loan Insurance Recon</div>
-        <div class="hero-sub">Go Digit — Float Register vs PR Register vs SAP HANA · Health + PA per Loan ID</div>
+        <div class="hero-sub">Go Digit LI · Float (DB) vs PR Register vs Disbursal (DB) · Health + PA per Loan ID</div>
       </div>
       <div class="hero-actions">
         <button class="btn-ghost" id="li-reset-btn">↺ Reset</button>
-        <button class="btn-ghost" id="li-export-btn" style="display:none">Export Report</button>
+        <button class="btn-ghost" id="li-export-btn" style="display:none">⬇ Export Report</button>
       </div>
     </div>
 
-    <!-- Upload Zone -->
     <div id="li-upload-zone">
       <div id="li-hint"></div>
 
-      <!-- Period config -->
+      <!-- Step 1: Period -->
       <div class="card" style="margin-bottom:16px">
-        <div class="card-header"><span class="card-title">Reconciliation Period</span></div>
+        <div class="card-header"><span class="card-title">Step 1 — Select Period</span></div>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
           <div>
             <div style="font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Mode</div>
@@ -422,74 +665,58 @@ Router.register('loanins', function(panel) {
           </div>
           <div id="li-month-wrap">
             <div style="font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Month</div>
-            <input class="form-input" id="li-month" value="Mar'26" placeholder="e.g. Mar'26" style="width:120px">
+            <input type="month" class="form-input" id="li-month-picker" value="${_curYM}" style="width:160px">
           </div>
           <div id="li-range-wrap" style="display:none;gap:8px;align-items:flex-end">
             <div>
               <div style="font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">From</div>
-              <input class="form-input" id="li-range-start" type="date" value="2025-12-01">
+              <input type="month" class="form-input" id="li-range-start" value="${_prevYM}" style="width:150px">
             </div>
             <div>
               <div style="font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">To</div>
-              <input class="form-input" id="li-range-end" type="date" value="2026-03-31">
+              <input type="month" class="form-input" id="li-range-end" value="${_curYM}" style="width:150px">
             </div>
           </div>
+          <button class="btn-o" id="li-set-period-btn" style="padding:8px 20px;font-size:12px;font-weight:600">
+            📅 Set Period
+          </button>
         </div>
       </div>
 
-      <!-- File uploads -->
+      <!-- Step 2: Data Sources (auto from DB) -->
       <div class="card" style="margin-bottom:16px">
-        <div class="card-header"><span class="card-title">Step 1 — Float Register &amp; SAP HANA</span>
-          <span id="li-db-badge" style="font-size:10px;padding:2px 8px;border-radius:10px;background:#D9F0D9;color:#1D6F42">Loading DB…</span>
+        <div class="card-header">
+          <span class="card-title">Step 2 — Data Sources</span>
+          <span style="font-size:11px;color:var(--muted)">Auto-loaded from database · no file upload needed</span>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          ${_liFileCard('li-float','Float Register','Go Digit Float file · POLICY_NUMBER, TRANS_DATE, DEBIT_AMT / CREDIT_AMT','required')}
-          ${_liFileCard('li-hana','SAP HANA Loan Sheet','Override DB data · LOAN_APPLICATION_ID, LI_CHARGES, DISBURSEMENT_DATE','optional')}
-        </div>
-      </div>
-
-      <!-- PR Register — dynamic rows, exactly like MI partner inputs -->
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-header">
-          <span class="card-title">Step 2 — PR Register(s)</span>
-          <span style="font-size:11px;color:var(--muted)">One file per month · press ＋ to add more</span>
-        </div>
-        <div id="li-pr-rows" style="display:flex;flex-direction:column;gap:8px">
-          <div class="recon-file-card" style="display:flex;align-items:center;gap:10px">
-            <div style="flex:1">
-              <div class="recon-file-label">PR Register 1</div>
-              <div class="recon-file-sub">POLICY_NUMBER · BOOKINGID_PLANID · PRODUCT_LOB · GROSS_PREMIUM</div>
-              <input type="file" class="li-pr-file" accept=".xlsx,.xls,.csv" style="font-size:11px;color:var(--muted);margin-top:4px">
-            </div>
+          <div style="border:1px dashed var(--border);border-radius:8px;padding:14px">
+            <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:3px">Float Register — Go Digit LI</div>
+            <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Policy debit/credit entries · POLICY_NUMBER, DEBIT_AMT, CREDIT_AMT</div>
+            <span id="li-float-badge" style="font-size:10px;padding:3px 10px;border-radius:10px;background:#FFF3CD;color:#8A6010">⏳ Loads on Run</span>
+          </div>
+          <div style="border:1px dashed var(--border);border-radius:8px;padding:14px">
+            <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:3px">Disbursal Data — HANA + Loan Status</div>
+            <div style="font-size:10px;color:var(--muted);margin-bottom:8px">LI charges, disbursal dates, loan status · all months</div>
+            <span id="li-disbursal-badge" style="font-size:10px;padding:3px 10px;border-radius:10px;background:#FFF3CD;color:#8A6010">⏳ Loads on Run</span>
           </div>
         </div>
-        <button type="button" id="li-pr-add" class="btn-o"
-                style="margin-top:8px;font-size:11px;padding:5px 12px">
-          ＋ Add PR Month
-        </button>
       </div>
 
-      <!-- Monthly Disbursal Reports — dynamic rows -->
+      <!-- Step 3: PR Register — dynamic per month -->
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">
-          <span class="card-title">Step 3 — Monthly Disbursal Reports</span>
-          <span style="font-size:11px;color:var(--muted)">Auto-loaded from database · upload additional files for cases not in DB</span>
+          <span class="card-title">Step 3 — PR Register</span>
+          <span id="li-pr-hint-text" style="font-size:11px;color:var(--muted)">Set period above first · one file per month will appear</span>
         </div>
-        <div id="li-dr-rows" style="display:flex;flex-direction:column;gap:8px">
-          <div class="recon-file-card" style="display:flex;align-items:center;gap:10px">
-            <div style="flex:1">
-              <div class="recon-file-label">Disbursal Report 1</div>
-              <div class="recon-file-sub">LOAN_APPLICATION_ID · LOAN_STATUS · DISBURSEMENT_DATE</div>
-              <input type="file" class="li-dr-file" accept=".xlsx,.xls,.csv" style="font-size:11px;color:var(--muted);margin-top:4px">
-            </div>
+        <div id="li-pr-rows">
+          <div style="padding:24px;text-align:center;color:var(--muted);font-size:12px;border:1px dashed var(--border);border-radius:8px">
+            Select period and click <strong>📅 Set Period</strong> to generate upload sections.
           </div>
         </div>
-        <button type="button" id="li-dr-add" class="btn-o"
-                style="margin-top:8px;font-size:11px;padding:5px 12px">
-          ＋ Add Disbursal Month
-        </button>
       </div>
 
+      <!-- Step 4: Run -->
       <div class="card" style="margin-bottom:16px">
         <div class="card-header"><span class="card-title">Step 4 — Run</span></div>
         <button class="btn-g" id="li-run-btn" style="padding:9px 28px">▶  Run Reconciliation</button>
@@ -509,369 +736,283 @@ Router.register('loanins', function(panel) {
 
     <!-- Results -->
     <div id="li-results" style="display:none">
-      <!-- KPI strip -->
       <div id="li-kpi-strip" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px"></div>
-
-      <!-- Tabs -->
       <div class="tab-bar" id="li-tabs"></div>
       <div id="li-tab-content"></div>
     </div>
   `;
 
-    // wire buttons
-    document.getElementById('li-run-btn')?.addEventListener('click', _runLI);
-
-    document.getElementById('li-reset-btn')?.addEventListener('click', () => {
-        _data = null;
-        _showUpload('li');
-        _hint('li-hint','','');
-        document.getElementById('li-export-btn').style.display = 'none';
-        // Reset PR rows back to 1 empty row
-        const prRows = document.getElementById('li-pr-rows');
-        if (prRows) {
-            prRows.innerHTML = `
-        <div class="recon-file-card" style="display:flex;align-items:center;gap:10px">
-          <div style="flex:1">
-            <div class="recon-file-label">PR Register 1</div>
-            <div class="recon-file-sub">POLICY_NUMBER · BOOKINGID_PLANID · PRODUCT_LOB · GROSS_PREMIUM</div>
-            <input type="file" class="li-pr-file" accept=".xlsx,.xls,.csv" style="font-size:11px;color:var(--muted);margin-top:4px">
-          </div>
-        </div>`;
-        }
-        // Reset DR rows back to 1 empty row
-        const drRows = document.getElementById('li-dr-rows');
-        if (drRows) {
-            drRows.innerHTML = `
-        <div class="recon-file-card" style="display:flex;align-items:center;gap:10px">
-          <div style="flex:1">
-            <div class="recon-file-label">Disbursal Report 1</div>
-            <div class="recon-file-sub">LOAN_APPLICATION_ID · LOAN_STATUS · DISBURSEMENT_DATE</div>
-            <input type="file" class="li-dr-file" accept=".xlsx,.xls,.csv" style="font-size:11px;color:var(--muted);margin-top:4px">
-          </div>
-        </div>`;
-        }
-    });
-
-    // ── Mode toggle: period inputs only ─────────────────────────────
+    // ── Mode toggle ─────────────────────────────────────────────────
     document.getElementById('li-mode')?.addEventListener('change', function() {
         const isRange = this.value === 'range';
         document.getElementById('li-month-wrap').style.display = isRange ? 'none' : 'block';
-        document.getElementById('li-range-wrap').style.display = isRange ? 'flex' : 'none';
+        document.getElementById('li-range-wrap').style.display = isRange ? 'flex'  : 'none';
     });
 
-    // ── Dynamic row adders — same pattern as MI partner PR inputs ──
-    function _addRow(containerId, label, cls, sub) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        const n   = container.querySelectorAll('.' + cls).length + 1;
-        const div = document.createElement('div');
-        div.className = 'recon-file-card';
-        div.style.cssText = 'display:flex;align-items:center;gap:10px';
-        div.innerHTML = `
-      <div style="flex:1">
-        <div class="recon-file-label">${label} ${n}</div>
-        <div class="recon-file-sub">${sub}</div>
-        <input type="file" class="${cls}" accept=".xlsx,.xls,.csv"
-               style="font-size:11px;color:var(--muted);margin-top:4px">
-      </div>
-      <button type="button"
-              style="background:none;border:none;cursor:pointer;font-size:20px;
-                     color:var(--muted);padding:0 4px;flex-shrink:0;align-self:flex-start;
-                     margin-top:12px"
-              onclick="this.closest('.recon-file-card').remove()">×</button>
-    `;
-        container.appendChild(div);
+    // ── Set Period → generate dynamic PR file sections ───────────────
+    document.getElementById('li-set-period-btn')?.addEventListener('click', _setPeriod);
+
+    function _setPeriod() {
+        const mode = document.getElementById('li-mode').value;
+        let fromLabel, toLabel;
+        if (mode === 'month') {
+            const picker = document.getElementById('li-month-picker').value;
+            if (!picker) { _hint('li-hint','danger','Select a month first.'); return; }
+            fromLabel = toLabel = _ymToLabel(picker);
+        } else {
+            const rs = document.getElementById('li-range-start').value;
+            const re = document.getElementById('li-range-end').value;
+            if (!rs || !re) { _hint('li-hint','danger','Select both From and To months.'); return; }
+            fromLabel = _ymToLabel(rs);
+            toLabel   = _ymToLabel(re);
+        }
+
+        _prMonths = _monthsInRange(fromLabel, toLabel);
+        if (!_prMonths.length)   { _hint('li-hint','danger','No months in selected range.'); return; }
+        if (_prMonths.length > 12){ _hint('li-hint','danger','Range too large (max 12 months).'); return; }
+
+        const container = document.getElementById('li-pr-rows');
+        container.innerHTML = _prMonths.map(mo => `
+          <div style="display:flex;align-items:center;gap:10px;padding:12px;
+               border:1px dashed var(--border);border-radius:8px;margin-bottom:8px">
+            <div style="flex:1">
+              <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:3px">${mo} — PR Register</div>
+              <div style="font-size:10px;color:var(--muted);margin-bottom:6px">
+                POLICY_NUMBER · BOOKINGID_PLANID · PRODUCT_LOB · GROSS_PREMIUM
+              </div>
+              <input type="file" class="li-pr-file" data-month="${mo}"
+                     accept=".xlsx,.xls,.csv" style="font-size:11px;color:var(--muted)">
+            </div>
+          </div>`).join('');
+
+        document.getElementById('li-pr-hint-text').textContent =
+            _prMonths.length === 1
+            ? `${_prMonths[0]} — 1 month`
+            : `${_prMonths[0]} → ${_prMonths[_prMonths.length-1]} — ${_prMonths.length} months`;
+        _hint('li-hint','','');
     }
 
-    document.getElementById('li-pr-add')?.addEventListener('click', () =>
-        _addRow('li-pr-rows', 'PR Register',
-            'li-pr-file',
-            'POLICY_NUMBER · BOOKINGID_PLANID · PRODUCT_LOB · GROSS_PREMIUM'));
+    // ── Reset ────────────────────────────────────────────────────────
+    document.getElementById('li-reset-btn')?.addEventListener('click', () => {
+        _data = null; _prMonths = [];
+        _showUpload('li');
+        _hint('li-hint','','');
+        document.getElementById('li-export-btn').style.display = 'none';
+        document.getElementById('li-pr-rows').innerHTML =
+            '<div style="padding:24px;text-align:center;color:var(--muted);font-size:12px;' +
+            'border:1px dashed var(--border);border-radius:8px">' +
+            'Select period and click <strong>📅 Set Period</strong> to generate upload sections.</div>';
+        document.getElementById('li-pr-hint-text').textContent = 'Set period above first · one file per month will appear';
+        _badge('li-float-badge',    '⏳ Loads on Run', '#FFF3CD', '#8A6010');
+        _badge('li-disbursal-badge','⏳ Loads on Run', '#FFF3CD', '#8A6010');
+    });
 
-    document.getElementById('li-dr-add')?.addEventListener('click', () =>
-        _addRow('li-dr-rows', 'Disbursal Report',
-            'li-dr-file',
-            'LOAN_APPLICATION_ID · LOAN_STATUS · DISBURSEMENT_DATE'));
-    document.getElementById('li-export-btn')?.addEventListener('click', () => {
+    // ── Export ───────────────────────────────────────────────────────
+    document.getElementById('li-export-btn')?.addEventListener('click', async () => {
         if (!_data) return;
         const label = _data.summary.label || 'Recon';
         const safe  = label.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_\-]/g,'');
-        _downloadXLSX(_liExportXLSX(_data, label), `LI_Float_Recon_${safe}.xlsx`);
+        const btn   = document.getElementById('li-export-btn');
+        btn.textContent = '⏳ Exporting…';
+        btn.disabled = true;
+        try {
+            const buf = await _liExportXLSX(_data, label);
+            _downloadXLSX(buf, `LI_Float_Recon_${safe}.xlsx`);
+        } finally {
+            btn.textContent = '⬇ Export XLSX';
+            btn.disabled = false;
+        }
     });
 
+    function _badge(id, text, bg, color) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = text;
+        el.style.background = bg;
+        el.style.color = color;
+    }
+
+    // ── Run ──────────────────────────────────────────────────────────
+    document.getElementById('li-run-btn')?.addEventListener('click', _runLI);
+
     async function _runLI() {
-        const floatFile   = document.getElementById('li-float-input')?.files?.[0];
-        const hanaFile    = document.getElementById('li-hana-input')?.files?.[0];
-        const monthFiles  = Array.from(
-            document.querySelectorAll('#li-dr-rows .li-dr-file')
-        ).map(inp => inp.files?.[0]).filter(Boolean);
-
-        // ── Auto-fetch from DB ────────────────────────────────────────
-        let _dbReconData = [];
-        const badge = document.getElementById('li-db-badge');
-        try {
-            const dbRes = await API.Disbursal.getReconData();
-            _dbReconData = (dbRes && dbRes.data) ? dbRes.data : [];
-            if (badge) badge.textContent = '✅ ' + _dbReconData.length.toLocaleString() + ' from DB';
-        } catch(e) {
-            console.warn('[LI] DB fetch failed:', e.message);
-            if (badge) badge.textContent = '⚠️ DB unavailable';
-        }
-        const mode        = document.getElementById('li-mode')?.value || 'month';
-        const monthLabel  = document.getElementById('li-month')?.value?.trim() || "Mar'26";
-        const rangeStart  = document.getElementById('li-range-start')?.value || '';
-        const rangeEnd    = document.getElementById('li-range-end')?.value || '';
-
-        // PR files — same input for both month and range mode
-        // In range mode user Ctrl+Clicks to select multiple files at once
-        // Collect all PR files from dynamic rows (class=li-pr-file)
-        const prFiles = Array.from(
-            document.querySelectorAll('#li-pr-rows .li-pr-file')
-        ).map(inp => inp.files?.[0]).filter(Boolean);
-
-        if (!floatFile) { _hint('li-hint','danger','<strong>Float Register is required.</strong>'); return; }
-        if (!prFiles.length) {
+        // 1. Period must be configured via Set Period
+        if (!_prMonths.length) {
             _hint('li-hint','danger',
-                '<strong>PR Register is required.</strong> Upload at least one PR file. ' +
-                'For date range use ＋ Add PR Month to add more files.');
+                '<strong>Set Period first.</strong> Click <strong>📅 Set Period</strong> above to generate PR upload sections.');
             return;
         }
-        if (!window.XLSX){ _hint('li-hint','danger','SheetJS library not loaded — please refresh the page.'); return; }
+
+        // 2. Collect PR files
+        const prInputs = Array.from(document.querySelectorAll('#li-pr-rows .li-pr-file'));
+        const prFiles  = prInputs.map(el => ({ file: el.files?.[0], month: el.dataset.month }))
+                                 .filter(p => p.file);
+        if (!prFiles.length) {
+            _hint('li-hint','danger',
+                '<strong>PR Register required.</strong> Upload at least one PR Register file.');
+            return;
+        }
+        if (!window.XLSX) {
+            _hint('li-hint','danger','SheetJS library not loaded — please refresh the page.');
+            return;
+        }
+
+        // 3. Derive period metadata from _prMonths
+        const mode = document.getElementById('li-mode').value;
+        let periodLabel, periodStart, periodEnd;
+        if (mode === 'month') {
+            const picker = document.getElementById('li-month-picker').value; // "2025-04"
+            const d = new Date(picker + '-01');
+            periodStart = d;
+            periodEnd   = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+            periodLabel = _prMonths[0];
+        } else {
+            const rs = document.getElementById('li-range-start').value;
+            const re = document.getElementById('li-range-end').value;
+            periodStart = new Date(rs + '-01');
+            const dEnd  = new Date(re + '-01');
+            periodEnd   = new Date(dEnd.getFullYear(), dEnd.getMonth() + 1, 0);
+            periodLabel = _prMonths.length === 1
+                ? _prMonths[0]
+                : `${_prMonths[0]} to ${_prMonths[_prMonths.length-1]}`;
+        }
 
         _hint('li-hint','','');
         _showLoad('li');
         const setP = _progress('li-progress-label','li-progress-bar','li-progress-pct');
 
         try {
-            // 1. Period
-            const MO = {JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12};
-            if (mode === 'month') {
-                // Handles both 'Mar 2026' and "Mar'26" formats
-                const lbl = monthLabel.trim();
-                const m1  = lbl.match(/^([A-Za-z]+)[' ](\d{2,4})$/);
-                if (!m1) throw new Error('Invalid month: "' + monthLabel + '". Use "Mar\'26" or "Mar 2026"');
-                const moStr = m1[1].slice(0,3).toUpperCase();
-                const mn    = MO[moStr];
-                let   y     = parseInt(m1[2]);
-                if (y < 100) y += 2000;
-                if (!mn || isNaN(y)) throw new Error('Invalid month: "' + monthLabel + '"');
-                periodStart = new Date(y, mn-1, 1);
-                periodEnd   = new Date(y, mn, 0);
-                periodLabel = monthLabel;
-            } else {
-                if (!rangeStart || !rangeEnd) throw new Error('Please set both Range Start and Range End dates.');
-                periodStart = new Date(rangeStart);
-                periodEnd   = new Date(rangeEnd);
-                periodLabel = `${rangeStart} to ${rangeEnd}`;
-            }
-
-            setP(8, 'Reading Float Register…');
-            const floatWB = await _readWB(floatFile);
-            const allFloatRows = _sheetToRows(floatWB, floatWB.SheetNames[0], 'POLICY_NUMBER');
-            console.log('[LI] Float: all rows =', allFloatRows.length, '| sample keys:', Object.keys(allFloatRows[0]||{}));
-
-            // Filter float rows to period
-            // Range mode: use TRANS_DATE date range (spans multiple months)
-            // Month mode: prefer MONTHS column exact match, fall back to TRANS_DATE
-            // Normalize month label for comparison
-            // Converts "Mar 2026" → "Mar'26" and "July'25" → "Jul'25"
-            const normMonth = (s) => {
-                if (!s) return '';
-                s = String(s).trim();
-                // "Mar 2026" → "Mar'26"
-                const m1 = s.match(/^([A-Za-z]+)\s+(\d{4})$/);
-                if (m1) {
-                    const mo = m1[1].substring(0,3);
-                    return mo.charAt(0).toUpperCase() + mo.slice(1).toLowerCase()
-                        + "'" + m1[2].slice(-2);
-                }
-                // "July'25" → "Jul'25"
-                const m2 = s.match(/^([A-Za-z]+)'(\d{2})$/);
-                if (m2) {
-                    const mo = m2[1].substring(0,3);
-                    return mo.charAt(0).toUpperCase() + mo.slice(1).toLowerCase()
-                        + "'" + m2[2];
-                }
-                return s;
-            };
-            const monthLabelNorm = normMonth(monthLabel);
-
-            const floatRows = allFloatRows.filter(r => {
-                // Month mode with MONTHS column — normalized match
-                if (mode === 'month') {
-                    const mVal = _g(r,'MONTHS','Months','months');
-                    if (mVal && String(mVal).trim()) {
-                        return normMonth(String(mVal).trim()) === monthLabelNorm;
-                    }
-                }
-                // Date range filter (range mode, or month mode without MONTHS col)
-                const dtRaw = _g(r,'TRANS_DATE','TRANSACTION_DATE','DATE');
-                if (!dtRaw) return mode !== 'range'; // in range mode, drop blank-date rows
-                const dt = new Date(dtRaw);
-                if (isNaN(dt.getTime())) return mode !== 'range';
-                return dt >= periodStart && dt <= periodEnd;
-            });
-            console.log(`[LI] Float: ${allFloatRows.length} total → ${floatRows.length} in period (mode=${mode})`);
-            if (floatRows.length === 0) {
-                const sampleMonths = [...new Set(allFloatRows.map(r=>_g(r,'MONTHS','Months','')).filter(Boolean))].slice(0,6);
-                _hint('li-hint','danger',
-                    `<strong>No float rows found for the selected period.</strong><br>` +
-                    (sampleMonths.length ? `Available MONTHS values in file: <code>${sampleMonths.join(', ')}</code><br>` : '') +
-                    `Selected: <strong>${periodLabel}</strong>. Check your period selection matches the MONTHS column exactly.`);
-                _showUpload('li'); return;
-            }
-
-            setP(22, `Reading PR Register(s) — ${prFiles.length} file(s)…`);
-            let prRows = [];
-            for (let pi = 0; pi < prFiles.length; pi++) {
-                setP(22 + Math.round(pi/Math.max(prFiles.length,1)*12),
-                    `Reading PR file ${pi+1}/${prFiles.length}: ${prFiles[pi].name}…`);
-                const prWB  = await _readWB(prFiles[pi]);
-                // Try 'POLICY' keyword sheet first, then first sheet
-                const found = _findSheet(prWB, 'POLICY');
-                const rows  = found.rows.length ? found.rows : _sheetToRows(prWB, prWB.SheetNames[0], '');
-                prRows = prRows.concat(rows);
-                console.log(`[LI] PR file ${pi+1}: ${rows.length} rows from ${prFiles[pi].name}`);
-            }
-            console.log(`[LI] PR combined: ${prRows.length} rows from ${prFiles.length} file(s)`);
-            if (!prRows.length) {
-                _hint('li-hint','danger','<strong>PR Register(s) empty.</strong> Check files are valid Excel sheets.');
-                _showUpload('li'); return;
-            }
-
-            setP(38, 'Loading SAP HANA data…');
-            let hanaRows = [];
-
-            // DB primary — map to HANA format
-            if (_dbReconData.length) {
-                hanaRows = _dbReconData.map(r => ({
-                    LOAN_APPLICATION_ID: r.loanApplicationId || '',
-                    LI_CHARGES:          r.liCharges || 0,
-                    DISBURSEMENT_DATE:   r.disbursementDate || '',
+            // ── A: Load Float Register from DB ──────────────────────────
+            setP(8, 'Loading Float Register from database…');
+            let allFloatRows = [];
+            try {
+                const floatRes  = await API.Float.getRegister('Go_Digit_LI', null);
+                const dbRecords = (floatRes && floatRes.data) ? floatRes.data : [];
+                // Map camelCase DB fields → UPPER_SNAKE_CASE expected by recon engine
+                allFloatRows = dbRecords.map(r => ({
+                    FLOAT_TYPE:          r.floatType           || '',
+                    MONTHS:              r.monthLabel          || '',
+                    TRANS_DATE:          r.transDate           || '',
+                    BOOKING_TYPE:        r.bookingType         || '',
+                    TRANSACTION_DETAILS: r.transactionDetails  || '',
+                    CREDIT_AMT:          Number(r.creditAmt   || 0),
+                    DEBIT_AMT:           Number(r.debitAmt    || 0),
+                    BALANCE:             Number(r.balance     || 0),
+                    POLICY_NUMBER:       r.policyNumber        || '',
+                    LOAN_ID:             r.loanId             || '',
+                    IMD_CODE:            r.imdCode            || '',
                 }));
-                console.log('[LI] HANA from DB:', hanaRows.length);
-            }
-            // File override — merge (file wins for same loan ID)
-            if (hanaFile) {
-                const hanaWB  = await _readWB(hanaFile);
-                const found   = _findSheet(hanaWB, 'LOAN');
-                const fileRows= found.rows;
-                const fileIds = new Set(fileRows.map(r =>
-                    String(_g(r,'LOAN_APPLICATION_ID','LOANAPPLICATIONID','LOAN_ID')||'').trim()));
-                const dbOnly  = hanaRows.filter(r => !fileIds.has(String(r.LOAN_APPLICATION_ID||'').trim()));
-                hanaRows = [...fileRows, ...dbOnly];
-                console.log('[LI] HANA merged: file=' + fileRows.length + ' + db-only=' + dbOnly.length);
+                _badge('li-float-badge',
+                    '✅ ' + allFloatRows.length.toLocaleString() + ' records from DB',
+                    '#D9F0D9', '#1D6F42');
+                console.log('[LI] Float from DB:', allFloatRows.length);
+            } catch(e) {
+                _badge('li-float-badge', '❌ DB load failed', '#FFE0E0', '#8B2121');
+                throw new Error('Float Register load failed: ' + e.message);
             }
 
-            setP(52, 'Loading loan status data…');
+            // ── B: Filter to selected period ─────────────────────────────
+            setP(20, 'Filtering float entries for period…');
+            const monthSet = new Set(_prMonths.map(m => _normLbl(m)));
+            const floatRows = allFloatRows.filter(r => {
+                const mo = _normLbl(String(r.MONTHS || '').trim());
+                if (mo) return monthSet.has(mo);
+                // Fallback: TRANS_DATE date range
+                const dt = new Date(r.TRANS_DATE);
+                return !isNaN(dt.getTime()) && dt >= periodStart && dt <= periodEnd;
+            });
+            console.log(`[LI] Float period filter: ${allFloatRows.length} → ${floatRows.length}`);
+
+            if (floatRows.length === 0) {
+                const avail = [...new Set(allFloatRows.map(r=>r.MONTHS).filter(Boolean))].slice(0,8);
+                _hint('li-hint','danger',
+                    `<strong>No float entries found for ${periodLabel}.</strong><br>` +
+                    (avail.length ? `Available months in DB: <code>${avail.join(', ')}</code><br>` : '') +
+                    `Make sure float data has been uploaded for this period via Float Register → Upload.`);
+                _showUpload('li'); return;
+            }
+
+            // ── C: Load Disbursal (HANA + Loan Status) from DB ──────────
+            setP(32, 'Loading disbursal data from database…');
+            let _dbReconData = [];
+            try {
+                const dbRes  = await API.Disbursal.getReconData();
+                _dbReconData = (dbRes && dbRes.data) ? dbRes.data : [];
+                _badge('li-disbursal-badge',
+                    '✅ ' + _dbReconData.length.toLocaleString() + ' records from DB',
+                    '#D9F0D9', '#1D6F42');
+                console.log('[LI] Disbursal from DB:', _dbReconData.length);
+            } catch(e) {
+                _badge('li-disbursal-badge', '⚠️ DB unavailable — loan status may be incomplete', '#FFF3CD', '#8A6010');
+                console.warn('[LI] Disbursal DB failed:', e.message);
+            }
+
+            // Map to HANA format for recon engine
+            const hanaRows = _dbReconData.map(r => ({
+                LOAN_APPLICATION_ID: r.loanApplicationId || '',
+                LI_CHARGES:          r.liCharges || 0,
+                DISBURSEMENT_DATE:   r.disbursementDate || '',
+            }));
+
+            // Build monthEntries for status lookup
             const monthEntries = [];
-            const MO_NAME = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-            // DB primary — synthetic entry with all records
             if (_dbReconData.length) {
-                const dbRows = _dbReconData
+                const dbStatusRows = _dbReconData
                     .filter(r => r.loanApplicationId)
                     .map(r => _normRow({
                         LOAN_APPLICATION_ID: r.loanApplicationId,
                         LOAN_STATUS:         r.loanStatus || '',
                         DISBURSEMENT_DATE:   r.disbursementDate || '',
                     }));
-                if (dbRows.length) {
-                    monthEntries.push({ rows: dbRows, label: 'DB Records' });
-                    console.log('[LI] DR from DB:', dbRows.length);
-                }
+                if (dbStatusRows.length) monthEntries.push({ rows: dbStatusRows, label: 'DB Records' });
             }
 
-            // Helper: detect dominant month from DISBURSEMENT_DATE / DISBURSAL_DATE column
-            function _detectDRMonth(rows) {
-                const dateKeys = Object.keys(rows[0]||{}).filter(k =>
-                    k.replace(/[^A-Z]/g,'').includes('DISBURS') || k.replace(/[^A-Z]/g,'').includes('DISB')
-                );
-                if (!dateKeys.length) return null;
-                const dateKey = dateKeys[0];
-                const ymCount = {};
-                for (const r of rows) {
-                    const raw = r[dateKey];
-                    if (!raw) continue;
-                    const d = new Date(raw);
-                    if (isNaN(d.getTime())) continue;
-                    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-                    ymCount[ym] = (ymCount[ym]||0) + 1;
-                }
-                const best = Object.entries(ymCount).sort((a,b)=>b[1]-a[1])[0];
-                if (!best) return null;
-                const [yr, mo] = best[0].split('-');
-                return `${MO_NAME[parseInt(mo)]} ${yr}`;
+            // ── D: Load PR Register files ─────────────────────────────────
+            setP(46, `Reading PR Register(s) — ${prFiles.length} file(s)…`);
+            let prRows = [];
+            for (let i = 0; i < prFiles.length; i++) {
+                setP(46 + Math.round(i / Math.max(prFiles.length,1) * 22),
+                    `Reading PR file: ${prFiles[i].month} (${prFiles[i].file.name})…`);
+                const prWB  = await _readWB(prFiles[i].file);
+                const found = _findSheet(prWB, 'POLICY');
+                const rows  = found.rows.length ? found.rows : _sheetToRows(prWB, prWB.SheetNames[0], '');
+                prRows = prRows.concat(rows);
+                console.log(`[LI] PR ${prFiles[i].month}: ${rows.length} rows`);
+            }
+            if (!prRows.length) {
+                _hint('li-hint','danger',
+                    '<strong>PR Register(s) empty.</strong> Ensure files have POLICY_NUMBER and PRODUCT_LOB columns.');
+                _showUpload('li'); return;
             }
 
-            for (let i = 0; i < monthFiles.length; i++) {
-                setP(52 + Math.round(i/Math.max(monthFiles.length,1)*15),
-                    `Reading disbursal file ${i+1}/${monthFiles.length}: ${monthFiles[i].name}…`);
-                const mwb   = await _readWB(monthFiles[i]);
-                const found = _findSheet(mwb, 'LOAN');
-                const rows  = found.rows.length ? found.rows : _sheetToRows(mwb, mwb.SheetNames[0], '');
-                if (!rows.length) continue;
-
-                // 1st priority: detect from DISBURSEMENT_DATE column
-                let mlabel = _detectDRMonth(rows);
-
-                // 2nd priority: filename pattern (Jan26, Feb_2026, etc.)
-                if (!mlabel) {
-                    const fnMatch = monthFiles[i].name.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[^0-9]*([0-9]{2,4})/i);
-                    if (fnMatch) {
-                        const abbr = fnMatch[1].charAt(0).toUpperCase() + fnMatch[1].slice(1).toLowerCase();
-                        const yr   = fnMatch[2].length === 2 ? '20' + fnMatch[2] : fnMatch[2];
-                        mlabel = `${abbr} ${yr}`;
-                    }
-                }
-
-                // 3rd fallback: use current month label
-                if (!mlabel) mlabel = monthLabel || `DR File ${i+1}`;
-
-                monthEntries.push({ rows, label: mlabel });
-                console.log(`[LI] Disbursal file ${i+1}: ${monthFiles[i].name} → month="${mlabel}" | ${rows.length} rows`);
-            }
-            console.log(`[LI] Disbursal files: ${monthEntries.length} loaded | months: ${monthEntries.map(e=>e.label).join(', ')}`);
-
+            // ── E: Run reconciliation ─────────────────────────────────────
             setP(72, 'Running reconciliation logic…');
             const result = _liRunRecon(floatRows, allFloatRows, prRows, hanaRows, monthEntries);
-            console.log('[LI] Issued:', result.issuedRows.length, '| Cancel:', result.cancelRows.length,
-                '| TopUp:', result.topupRows.length, '| Queries:', result.queries.length);
+            console.log('[LI] Issued:', result.issuedRows.length,
+                '| Cancel:', result.cancelRows.length,
+                '| TopUp:', result.topupRows.length,
+                '| Queries:', result.queries.length);
 
-            // Warn if all rows ended up as top-up (column detection failure)
             if (result.issuedRows.length === 0 && result.topupRows.length > 0) {
-                const keys = Object.keys(allFloatRows[0] || {});
-                const hasPol = keys.some(k => k.includes('POLICY'));
-                if (!hasPol) {
-                    _hint('li-hint','danger',
-                        `<strong>Column detection failed.</strong> Could not find <code>POLICY_NUMBER</code> in your Float file.<br>
-             Actual columns found: <code>${keys.join(', ')}</code><br>
-             Please ensure the Float Register has a column named <strong>POLICY_NUMBER</strong>.`);
-                    _showUpload('li');
-                    return;
-                }
                 const prKeys = Object.keys(prRows[0] || {});
                 _hint('li-hint','danger',
-                    `<strong>No Issued Cases found.</strong> ${result.topupRows.length.toLocaleString()} rows are Top Up.<br>
-           Float columns: <code>${keys.slice(0,8).join(', ')}</code><br>
-           PR columns: <code>${prKeys.slice(0,8).join(', ')}</code><br>
-           <strong>Check:</strong> PRODUCT_LOB in PR should have values <code>Health</code> or <code>PA</code>.<br>
-           Also check that TRANS_DATE falls within your selected period (${periodLabel}).`);
-                _showUpload('li');
-                return;
+                    `<strong>No Issued Cases found — ${result.topupRows.length} rows are Top Up.</strong><br>` +
+                    `PR columns found: <code>${prKeys.slice(0,10).join(', ')}</code><br>` +
+                    `<strong>Check:</strong> PRODUCT_LOB must contain <code>Health</code> or <code>PA</code>.`);
+                _showUpload('li'); return;
             }
 
             result.summary.label = periodLabel;
             _data = result;
 
             window._lastLIResult = {
-                monthLabel:  periodLabel,
-                total:       result.summary.total,
-                match:       result.summary.match,
-                matchPct:    result.summary.matchPct,
-                queries:     result.summary.queries,
-                totalFloat:  result.summary.totalFloat,
-                prMismatch:  result.summary.prMismatch || 0,
+                monthLabel: periodLabel,
+                total:      result.summary.total,
+                match:      result.summary.match,
+                matchPct:   result.summary.matchPct,
+                queries:    result.summary.queries,
+                totalFloat: result.summary.totalFloat,
+                prMismatch: result.summary.prMismatch || 0,
             };
             if (typeof _updateDashboard === 'function') _updateDashboard();
 
@@ -892,12 +1033,12 @@ Router.register('loanins', function(panel) {
 
         // KPI strip
         const kpis = [
-            { label:'TOTAL LOANS',       value: summary.total.toLocaleString(),       sub:'Issued this month',   color:'var(--navy-lt)' },
+            { label:'TOTAL LOANS',       value: summary.total.toLocaleString(),       sub:'Issued this period',   color:'var(--navy-lt)' },
             { label:'MATCH',             value: summary.match.toLocaleString(),        sub:`${summary.matchPct}%`, color:'var(--green)' },
-            { label:'OPEN QUERIES',      value: summary.queries.toLocaleString(),      sub:'Need resolution',     color:'var(--red)' },
-            { label:'LOAN CANCELLED',    value: summary.cancelled.toLocaleString(),    sub:'Policy to cancel',    color:'var(--navy)' },
-            { label:'NOT DISBURSED',     value: summary.notDisbursed.toLocaleString(), sub:'Policy to cancel',    color:'var(--navy)' },
-            { label:'TOTAL FLOAT (₹)',   value: '₹' + _inr(summary.totalFloat),       sub:'Deducted this month', color:'var(--gold)' },
+            { label:'OPEN QUERIES',      value: summary.queries.toLocaleString(),      sub:'Need resolution',      color:'var(--red)' },
+            { label:'LOAN CANCELLED',    value: summary.cancelled.toLocaleString(),    sub:'Policy to cancel',     color:'var(--navy)' },
+            { label:'NOT DISBURSED',     value: summary.notDisbursed.toLocaleString(), sub:'Policy to cancel',     color:'var(--navy)' },
+            { label:'TOTAL FLOAT (₹)',   value: '₹' + _inr(summary.totalFloat),       sub:'Deducted this period', color:'var(--gold)' },
             { label:'FLOAT = PR MATCH',  value: summary.prMatch.toLocaleString(),      sub:'Premium verified',    color:'var(--green)' },   // v5
             { label:'FLOAT ≠ PR',        value: summary.prMismatch.toLocaleString(),   sub:'Premium mismatch',    color:'var(--red)' },     // v5
         ];
@@ -955,25 +1096,30 @@ Router.register('loanins', function(panel) {
             {key:'Difference',label:'Diff'},{key:'_CANCEL_REM',label:'Remarks',badge:true},
         ];
 
+        const prcheckCols = [
+            {key:'Loan ID',                  label:'Loan ID'},
+            {key:'Policy No - Health',       label:'Policy Health'},
+            {key:'Debit Float (Health)',      label:'Float Debit H (₹)'},
+            {key:'Policy No - PA',           label:'Policy PA'},
+            {key:'Debit Float (PA)',          label:'Float Debit PA (₹)'},
+            {key:'Total Deduction (Float)',   label:'Total Float Dedn'},
+            {key:'Gross Premium (PR)',        label:'Gross Premium (PR)'},
+            {key:'Float vs PR Check',        label:'Check', badge:true},
+            {key:'LI Amount (SAP)',          label:'SAP LI Amt'},
+            {key:'_FINAL_STATUS',            label:'Final Status', badge:true},
+        ];
+
         content.innerHTML = `<div class="table-wrap" id="li-tbl-wrap"></div>`;
-        if (id==='issued')  _renderTable('li-tbl-wrap', issuedRows, issuedCols);
-        if (id==='queries') _renderTable('li-tbl-wrap', queries,    issuedCols);
-        if (id==='cancel')  _renderTable('li-tbl-wrap', cancelRows, cancelCols);
-        if (id==='topup')   _renderTable('li-tbl-wrap', topupRows,
+        if (id==='issued')   _renderTable('li-tbl-wrap', issuedRows, issuedCols);
+        if (id==='queries')  _renderTable('li-tbl-wrap', queries,    issuedCols);
+        if (id==='cancel')   _renderTable('li-tbl-wrap', cancelRows, cancelCols);
+        if (id==='topup')    _renderTable('li-tbl-wrap', topupRows,
             [{key:'Date',label:'Date'},{key:'Type',label:'Type'},{key:'Details',label:'Details'},
                 {key:'Credit',label:'Credit (₹)'},{key:'Debit',label:'Debit (₹)'}]);
+        if (id==='prcheck') {
+            const mismatch = (issuedRows||[]).filter(r => r['Float vs PR Check'] === 'Mismatch');
+            _renderTable('li-tbl-wrap', mismatch, prcheckCols);
+        }
     };
 });
 
-/** File upload card HTML */
-function _liFileCard(id, title, sub, badge) {
-    const badgeHtml = badge === 'required'
-        ? `<span style="font-size:9px;padding:1px 6px;border-radius:8px;background:var(--red-bg);color:var(--red-text);margin-left:6px">required</span>`
-        : `<span style="font-size:9px;padding:1px 6px;border-radius:8px;background:var(--gold-pale);color:var(--amber);margin-left:6px">optional</span>`;
-    return `
-    <div style="border:1px dashed var(--border);border-radius:8px;padding:12px">
-      <div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:2px">${title}${badgeHtml}</div>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:8px">${sub}</div>
-      <input type="file" id="${id}-input" accept=".xlsx,.xls,.csv" style="font-size:11px;color:var(--muted)">
-    </div>`;
-}

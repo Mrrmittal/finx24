@@ -133,3 +133,116 @@ body.role-admin .main {
 body.role-user .main {
   background: #F0F4F8;
 }
+
+/* ================================================================
+   Dark Mode — toggled via body.dark class
+   Moon button in topbar sets this + persists to localStorage
+   NOTE: --navy stays unchanged (used for dark hero/sidebar backgrounds).
+   We override individual elements that use --navy as a text colour.
+================================================================ */
+body.dark {
+  --text:       #D0DBE8;
+  --muted:      #7A8FA8;
+  --border:     rgba(255,255,255,0.09);
+  --border-mid: rgba(255,255,255,0.17);
+  --cream:      #0D1520;
+  --white:      #152030;
+  --green-bg:   rgba(42,123,79,0.18);
+  --red-bg:     rgba(178,58,58,0.18);
+  --amber-bg:   rgba(138,96,16,0.22);
+
+  background: #0D1520;
+  color: #D0DBE8;
+}
+
+/* Topbar */
+body.dark .topbar     { background: #111E2E; border-color: rgba(255,255,255,0.08); }
+body.dark .tb-title   { color: #C8D8EA; }
+body.dark .date-b     { background: #0D1520; border-color: rgba(255,255,255,0.10); color: #7A8FA8; }
+body.dark .live-badge { background: rgba(42,123,79,0.18); border-color: rgba(42,123,79,0.25); }
+
+/* Sidebar — keep dark navy, slightly deepen */
+body.dark .sidebar      { background: #070E1A; }
+body.dark .sidebar-logo { border-color: rgba(200,153,42,0.18); }
+
+/* Main / content area */
+body.dark .main,
+body.dark.role-admin .main,
+body.dark.role-user  .main,
+body.dark.role-admin .content,
+body.dark.role-user  .content { background: #0D1520; }
+
+/* Cards */
+body.dark .card       { background: #152030; border-color: rgba(255,255,255,0.09); }
+body.dark .card-title { color: #C8D8EA; }
+
+/* Module hero — already dark navy, looks fine; just ensure text colours hold */
+body.dark .module-hero { background: #0A1625; }
+
+/* KPI / stat chips */
+body.dark .kpi-card,
+body.dark .stat-chip { background: #152030; border-color: rgba(255,255,255,0.09); }
+body.dark .kpi-value,
+body.dark .stat-chip .chip-val { color: #C8D8EA; }
+
+/* Headings / section titles that use --navy as text colour */
+body.dark h1, body.dark h2, body.dark h3,
+body.dark .sec-title,
+body.dark .hub-card .hub-name,
+body.dark .acc-amount { color: #C8D8EA; }
+
+/* Hub cards (dashboard) */
+body.dark .hub-card { background: #152030; border-color: rgba(255,255,255,0.09); }
+body.dark .hub-card:hover { border-color: var(--gold); background: rgba(200,153,42,0.05); }
+
+/* Accrual cards */
+body.dark .accrual-card { background: #152030; border-color: rgba(255,255,255,0.09); }
+
+/* Tables */
+body.dark .table-wrap                  { border-color: rgba(255,255,255,0.08); }
+body.dark table                        { background: #152030; }
+body.dark thead tr                     { background: #0B1828 !important; }
+body.dark tbody tr:nth-child(odd)      { background: #152030; }
+body.dark tbody tr:nth-child(even)     { background: #111E2E; }
+body.dark tbody tr:hover               { background: #1C2E42 !important; }
+body.dark th, body.dark td             { border-color: rgba(255,255,255,0.07); color: #C8D8EA; }
+body.dark th                           { color: rgba(255,255,255,0.65); }
+
+/* Forms */
+body.dark .form-input,
+body.dark .form-select,
+body.dark input[type="month"],
+body.dark input[type="file"] {
+  background: #0D1520;
+  border-color: rgba(255,255,255,0.14);
+  color: #D0DBE8;
+}
+body.dark .form-input::placeholder { color: #4A6080; }
+
+/* Buttons */
+body.dark .btn-o          { color: #C8D8EA; border-color: rgba(255,255,255,0.14); }
+body.dark .btn-o:hover    { background: rgba(255,255,255,0.06); }
+body.dark .btn-back       { color: #7A8FA8; border-color: rgba(255,255,255,0.10); }
+body.dark .btn-back:hover { color: #C8D8EA; }
+
+/* Tabs */
+body.dark .tab-bar           { border-color: rgba(255,255,255,0.08); }
+body.dark .tab-item          { color: #7A8FA8; }
+body.dark .tab-item:hover    { color: #C8D8EA; }
+body.dark .tab-item.active   { color: var(--gold-lt); border-color: var(--gold); }
+
+/* Dark mode toggle button in topbar */
+#btn-dark-mode {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 5px 9px;
+  border-radius: var(--r-sm);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+#btn-dark-mode:hover { background: rgba(11,31,58,0.06); }
+body.dark #btn-dark-mode       { border-color: rgba(255,255,255,0.12); color: #8A9FBA; }
+body.dark #btn-dark-mode:hover { background: rgba(255,255,255,0.06); color: #C8D8EA; }
