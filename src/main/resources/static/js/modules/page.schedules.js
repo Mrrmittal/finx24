@@ -55,8 +55,8 @@ Router.register('schedules', function(panel) {
       accent:'#1E3F6B', ready:false },
     { id:'accrual-actual',    icon:'📒', name:'Accrual vs Actual',
       sub:'Reconciliation', desc:'Month-end accrual reconciliation',
-      badge:'Soon', badgeClr:'#8A6010', badgeBg:'#FFF3CD',
-      accent:'#1E3F6B', ready:false },
+      badge:'Live', badgeClr:'#1D6F42', badgeBg:'#D9F0D9',
+      accent:'#1E3F6B', ready:true },
   ];
 
   panel.innerHTML = `
@@ -146,6 +146,7 @@ Router.register('schedules', function(panel) {
   var routes = {
     'loan-ins-schedule': 'li-schedule',
     'float-register':    'float-register',
+    'accrual-actual':    'accrual-actual',
   };
   panel.querySelectorAll('[data-card-id]').forEach(function(el) {
     if (el.dataset.ready !== 'true') return;
