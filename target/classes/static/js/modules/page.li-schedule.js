@@ -32,7 +32,7 @@ Router.register('li-schedule', function(panel) {
           🛡️ Loan Insurance — Go Digit
         </div>
         <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:4px">
-          4-sheet Excel: Accrual Entry · Go_Digit Float · Active Cases · Cancellations
+          4-sheet Excel: Accrual Entry · Go_Digit Float · Active Cases · Cancellations · Saves accrual to DB
         </div>
       </div>
       <span style="font-size:10px;padding:4px 14px;border-radius:20px;
@@ -47,48 +47,32 @@ Router.register('li-schedule', function(panel) {
         <span class="card-title">Schedule Parameters</span>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
-
-        <!-- Period -->
-        <div>
-          <div style="font-size:11px;font-weight:600;color:var(--muted);
-                      text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">
-            Step 1 — Select Period
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--muted);
+                    text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">
+          Step 1 — Select Period
+        </div>
+        <div id="li-month-pills"
+             style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
+          <span style="font-size:11px;color:var(--muted)">Loading months…</span>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <div>
+            <div class="field-label">From</div>
+            <input type="date" class="form-input" id="li-from" style="width:145px">
           </div>
-          <div id="li-month-pills"
-               style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
-            <span style="font-size:11px;color:var(--muted)">Loading months…</span>
+          <div>
+            <div class="field-label">To</div>
+            <input type="date" class="form-input" id="li-to" style="width:145px">
           </div>
-          <div style="display:flex;gap:12px;flex-wrap:wrap">
-            <div>
-              <div class="field-label">From</div>
-              <input type="date" class="form-input" id="li-from" style="width:145px">
-            </div>
-            <div>
-              <div class="field-label">To</div>
-              <input type="date" class="form-input" id="li-to" style="width:145px">
-            </div>
-            <div>
-              <div class="field-label">Month Label</div>
-              <input type="text" class="form-input" id="li-label"
-                     placeholder="Apr'26" style="width:85px">
-            </div>
+          <div>
+            <div class="field-label">Month Label</div>
+            <input type="text" class="form-input" id="li-label"
+                   placeholder="Apr'26" style="width:85px">
           </div>
         </div>
-
-        <!-- Float Upload -->
-        <div>
-          <div style="font-size:11px;font-weight:600;color:var(--muted);
-                      text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">
-            Step 2 — Go Digit Float File
-          </div>
-          <input type="file" id="li-float-file" accept=".xlsx,.xls"
-                 style="font-size:12px;color:var(--navy);margin-bottom:8px">
-          <div style="font-size:10px;color:var(--muted);line-height:1.6">
-            Columns: FLOAT_TYPE · ACCOUNT_MANAGER · IMD_CODE · TRANS_DATE ·
-            BOOKING_TYPE · TRANSACTION_DETAILS · CREDIT_AMT · DEBIT_AMT ·
-            BALANCE · POLICY_NUMBER · RECEIPT_NO
-          </div>
+        <div style="margin-top:8px;font-size:10px;color:var(--muted)">
+          ℹ️ Float data is fetched automatically from the Float Register — no file upload needed.
         </div>
       </div>
 
@@ -139,7 +123,7 @@ Router.register('li-schedule', function(panel) {
 
       <!-- KPI Cards (6) -->
       <div id="li-kpi-grid"
-           style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;
+           style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;
                   margin-bottom:16px">
       </div>
 
@@ -232,11 +216,9 @@ Router.register('li-schedule', function(panel) {
         var from  = document.getElementById('li-from').value;
         var to    = document.getElementById('li-to').value;
         var label = (document.getElementById('li-label').value || '').trim();
-        var file  = document.getElementById('li-float-file').files[0];
 
-        if (!from || !to)  { _msg('warn', 'Please select period dates.');       return; }
-        if (!label)        { _msg('warn', "Enter month label e.g. Apr'26.");     return; }
-        if (!file)         { _msg('warn', 'Please upload Go Digit float file.'); return; }
+        if (!from || !to)  { _msg('warn', 'Please select period dates.');   return; }
+        if (!label)        { _msg('warn', "Enter month label e.g. Apr'26."); return; }
 
         var btn  = document.getElementById('li-generate-btn');
         var prog = document.getElementById('li-progress');
@@ -248,18 +230,14 @@ Router.register('li-schedule', function(panel) {
         bar.style.width = '20%'; msg.textContent = 'Fetching data from database…';
 
         try {
-            var form = new FormData();
-            form.append('from',       from);
-            form.append('to',         to);
-            form.append('monthLabel', label);
-            form.append('floatFile',  file);
+            var params = new URLSearchParams({ from: from, to: to, monthLabel: label });
 
             bar.style.width = '55%'; msg.textContent = 'Building Excel sheets…';
 
             var token = API.getToken();
             var res = await fetch(
-                'http://localhost:8080/api/schedules/loan-insurance/generate',
-                { method:'POST', body:form,
+                'http://localhost:8080/api/schedules/loan-insurance/generate?' + params.toString(),
+                { method:'POST',
                     headers: token ? {'Authorization':'Bearer '+token} : {} }
             );
 
@@ -297,18 +275,10 @@ Router.register('li-schedule', function(panel) {
     // ================================================================
     async function _loadDashboard(from, to, label, token) {
         try {
-            // Fetch disbursal dashboard + total expense in parallel
-            var [dashRes, expRes] = await Promise.all([
-                API.Disbursal.getDashboard(from, to),
-                fetch('http://localhost:8080/api/schedules/loan-insurance/last-expense',
-                    { headers: token ? {'Authorization':'Bearer '+token} : {} })
-                    .then(function(r){ return r.json(); }).catch(function(){ return {}; })
-            ]);
+            var dashRes = await API.Disbursal.getDashboard(from, to);
 
             var d = dashRes && dashRes.data ? dashRes.data : null;
             if (!d) return;
-
-            var totalExpense = Number(expRes.totalExpense || 0);
 
             var dash = document.getElementById('li-dashboard');
             if (dash) { dash.style.display = 'block'; }
@@ -350,12 +320,6 @@ Router.register('li-schedule', function(panel) {
                     value: inr(liNet),
                     sub:   'Active − Old Month Cancel',
                     clr:   '#1E3F6B'
-                },
-                {
-                    label: 'Total Expense',
-                    value: inr(Math.abs(totalExpense)),
-                    sub:   'From Go Digit Float (Rebooking)',
-                    clr:   '#8B2121'
                 },
                 {
                     label: 'Net Commission @82%',

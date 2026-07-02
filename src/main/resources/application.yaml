@@ -35,6 +35,12 @@ logging:
   level:
     com.Finx24: DEBUG
     org.springframework.security: INFO
+  file:
+    name: ./logs/finx24.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 10
 
 ---
 # ================================================================

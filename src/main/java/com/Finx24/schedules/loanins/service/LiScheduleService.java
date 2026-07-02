@@ -1,36 +1,43 @@
 package com.Finx24.schedules.loanins.service;
 
+import com.Finx24.schedules.loanins.entity.LiAccrualActualized;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Contract for Loan Insurance Schedule generation.
- * Implementation: LiScheduleServiceImpl
- *
- * Generates a 5-sheet Excel:
- *   1. Summary
- *   2. Accrual Entry
- *   3. Go_Digit Float
- *   4. Disbursal Report - Active
- *   5. Subsequent Cancellation
  */
 public interface LiScheduleService {
 
-    /**
-     * Generate LI Schedule Excel for given period.
-     *
-     * @param from       Period start date (e.g. 2026-04-01)
-     * @param to         Period end date   (e.g. 2026-04-30)
-     * @param monthLabel e.g. "Apr'26"
-     * @param floatFile  Go Digit float Excel uploaded by user
-     * @return byte[] — Excel file ready for download
-     */
-    /** Returns total expense from float for the period */
-    double getLastTotalExpense();
+    byte[] generateSchedule(LocalDate from, LocalDate to, String monthLabel) throws IOException;
 
-    byte[] generateSchedule(LocalDate from, LocalDate to,
-                            String monthLabel,
-                            MultipartFile floatFile) throws IOException;
+    List<String> getAccrualMonths();
+
+    List<LiAccrualActualized> getAccrualRecords(String month);
+
+    byte[] generateAccrualTemplate() throws IOException;
+
+    Map<String, Integer> processManualUpload(MultipartFile file) throws IOException;
+
+    LiAccrualActualized updateAccrualRecord(Long id, Map<String, Object> updates);
+
+    /**
+     * Create or update a single accrual record by (month, loanApplicationId).
+     * If a matching record exists it is updated; otherwise a new one is inserted.
+     */
+    LiAccrualActualized upsertAccrualRecord(Map<String, Object> data);
+
+    /**
+     * Upload Go Digit commission file (with PR file for policy→loan ID mapping).
+     * Stores all rows in LI_COMMISSION_FILE and actualizes matching LI_ACCRUAL_ACTUALIZED entries.
+     * @return map with keys: stored, actualized, skipped
+     */
+    Map<String, Integer> processCommissionUpload(
+            String accrualMonth,
+            MultipartFile commissionFile,
+            MultipartFile prFile) throws IOException;
 }
