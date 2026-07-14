@@ -35,6 +35,9 @@ logging:
   level:
     com.Finx24: DEBUG
     org.springframework.security: INFO
+    # TEMP — logs every incoming request's exact URI (e.g. "GET /api/js/...").
+    # Needed to pin down what's being hit repeatedly; safe to remove afterwards.
+    org.springframework.web.servlet.DispatcherServlet: DEBUG
   file:
     name: ./logs/finx24.log
   logback:

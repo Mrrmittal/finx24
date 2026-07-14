@@ -40,4 +40,11 @@ public interface LiScheduleService {
             String accrualMonth,
             MultipartFile commissionFile,
             MultipartFile prFile) throws IOException;
+
+    /**
+     * Standard accrual status report — pivots every LI_ACCRUAL_ACTUALIZED record by
+     * Remarks (Status: Accrued / Actualized / Accrual Carry Forward) per month, plus
+     * a colour-coded detail sheet. Aptos, size 8, matches the LI Schedule export style.
+     */
+    byte[] generateAccrualStatusReport() throws IOException;
 }

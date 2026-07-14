@@ -16,12 +16,21 @@
 const API = (() => {
 
   // ── Config ─────────────────────────────────────────────────────
-  // Auto-detect: relative path when served from Spring Boot,
-  // absolute when using Live Server
-  const BASE_URL = window.location.port === '8080'
-      ? '/api'                          // served from Spring Boot → relative
-      : 'http://localhost:8080/api';    // Live Server → absolute
+  // Auto-detect: relative path whenever this file is actually being served BY
+  // Spring Boot (any host/port — works behind a proxy too, since same-origin).
+  // Only fall back to the hardcoded absolute URL for known local dev servers
+  // (VS Code Live Server, file:// preview) that serve the static files
+  // themselves while Spring Boot runs separately on 8080.
+  const LIVE_SERVER_PORTS = ['5500', '5501', '3000'];
+  const BASE_URL = (window.location.protocol === 'file:' || LIVE_SERVER_PORTS.includes(window.location.port))
+      ? 'http://localhost:8080/api'     // Live Server / file preview → absolute
+      : '/api';                         // served from Spring Boot → relative
   const TOKEN_KEY  = 'finx24_jwt';
+  // A page can fire several authenticated calls in parallel on load. If the token
+  // is expired, all of them 401 at once — without this guard each one independently
+  // clears storage and calls reload(), and several overlapping reloads right as the
+  // page tears down is what shows up as the UI "blinking".
+  let _loggingOut = false;
 
   // ── Token helpers ───────────────────────────────────────────────
   function getToken()        { return localStorage.getItem(TOKEN_KEY); }
@@ -40,8 +49,18 @@ const API = (() => {
   }
 
   // ── Core fetch wrapper ──────────────────────────────────────────
-  async function _fetch(method, path, body = null, isMultipart = false) {
+  // GET_RETRY_ATTEMPTS: on dev machines running spring-boot-devtools, saving a file
+  // restarts the embedded server (port closes for ~1-3s) and LiveReload immediately
+  // reloads the page, so a page-load GET can land in that gap and see connection-refused.
+  // Retrying a couple of times with backoff lets it self-heal instead of showing a
+  // broken dashboard until the next manual refresh. Only GET is retried — it's the only
+  // safe-to-repeat method here (POST/PUT/DELETE could duplicate a side effect).
+  const GET_RETRY_ATTEMPTS = 2;
+  const GET_RETRY_DELAY_MS = 500;
+
+  async function _fetch(method, path, body = null, isMultipart = false, _retry = 0) {
     const url  = BASE_URL + path;
+    const hadToken = hasToken();
     const opts = {
       method,
       headers: _headers(isMultipart),
@@ -68,6 +87,12 @@ const API = (() => {
       if (err.name === 'AbortError') {
         throw new Error('Upload timed out (>5 min). Try uploading a smaller date range.');
       }
+      // Transient "server unreachable" (e.g. devtools mid-restart) — back off and retry a GET
+      const isNetworkError = err instanceof TypeError; // fetch throws TypeError for network-level failures
+      if (isNetworkError && method === 'GET' && _retry < GET_RETRY_ATTEMPTS) {
+        await new Promise(r => setTimeout(r, GET_RETRY_DELAY_MS * (_retry + 1)));
+        return _fetch(method, path, body, isMultipart, _retry + 1);
+      }
       // Log actual error for debugging
       console.error('[API] Fetch error:', err.name, err.message, 'URL:', url);
       throw new Error(
@@ -77,10 +102,23 @@ const API = (() => {
       );
     }
 
-    // 401 → token expired or invalid → re-login
+    // 401 → token expired or invalid → re-login.
+    // Only do this if we actually SENT a token — a 401 with no token just means
+    // "not logged in yet" (e.g. a call fired before/without auth), which is
+    // expected and not something reloading can fix. Reloading unconditionally
+    // here caused an infinite loop when an unguarded call fired pre-login:
+    // 401 → reload → same unguarded call fires again with no token → 401 → ...
     if (res.status === 401) {
-      clearToken();
-      window.location.reload();
+      if (hadToken && !_loggingOut) {
+        _loggingOut = true;
+        clearToken();
+        // Also drop the frontend login-gate flag (auth.js SESSION_KEY) — it has no
+        // expiry of its own, so if only the JWT is cleared, Auth.isLoggedIn() still
+        // reports "logged in" after reload, the app re-fires the same authenticated
+        // call, gets 401 again, and reloads again: an infinite reload loop.
+        sessionStorage.removeItem('finrecon_session');
+        window.location.reload();
+      }
       return;
     }
 

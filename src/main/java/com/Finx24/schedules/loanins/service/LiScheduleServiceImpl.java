@@ -19,6 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -86,6 +87,354 @@ public class LiScheduleServiceImpl implements LiScheduleService {
 
     @Override public List<String>               getAccrualMonths()              { return accrualRepo.findDistinctMonths(); }
     @Override public List<LiAccrualActualized>  getAccrualRecords(String month) { return accrualRepo.findByMonthOrderByLoanStatusAscLoanApplicationIdAsc(month); }
+
+    // ================================================================
+    //  STANDARD ACCRUAL VS ACTUALIZATION REPORT — 3 sheets, formula-driven
+    // ================================================================
+    @Override
+    public byte[] generateAccrualStatusReport() throws IOException {
+        List<LiAccrualActualized> accruals   = accrualRepo.findAll();
+        List<LiCommissionFile>    commissions = commissionRepo.findAll();
+
+        XSSFWorkbook wb = new XSSFWorkbook();
+        setDefaultFont(wb);
+
+        buildOpenAccrualsSheet(wb, accruals);
+        buildCommissionStatementSheet(wb, commissions);
+        buildAccrualVsActualizedSheet(wb, accruals);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        wb.write(out);
+        wb.close();
+        return out.toByteArray();
+    }
+
+    private static final List<String> REMARKS_STATUS_ORDER =
+            Arrays.asList("Accrued", "Accrual Carry Forward", "Actualized");
+
+    private XSSFColor statusColor(String status) {
+        if ("Actualized".equals(status))            return new XSSFColor(new byte[]{(byte)0xD9,(byte)0xF0,(byte)0xD9}, null); // green
+        if ("Accrual Carry Forward".equals(status))  return new XSSFColor(new byte[]{(byte)0xFF,(byte)0xE0,(byte)0xE0}, null); // red
+        return new XSSFColor(new byte[]{(byte)0xD9,(byte)0xE8,(byte)0xF5}, null); // blue — Accrued
+    }
+
+    /** Report-local styles always set the font explicitly — never rely on the workbook default. */
+    private CellStyle reportPlainStyle(XSSFWorkbook wb) {
+        CellStyle s = wb.createCellStyle();
+        s.setFont(aptosFont(wb, false, false));
+        s.setVerticalAlignment(VerticalAlignment.CENTER);
+        setBorders(s);
+        return s;
+    }
+    private CellStyle reportNumStyle(XSSFWorkbook wb) {
+        CellStyle s = wb.createCellStyle();
+        s.setFont(aptosFont(wb, false, false));
+        s.setDataFormat(wb.createDataFormat().getFormat("#,##0.00"));
+        s.setAlignment(HorizontalAlignment.RIGHT);
+        s.setVerticalAlignment(VerticalAlignment.CENTER);
+        setBorders(s);
+        return s;
+    }
+    private CellStyle reportBoldNumStyle(XSSFWorkbook wb) {
+        CellStyle s = wb.createCellStyle();
+        s.setFont(aptosFont(wb, true, false));
+        s.setDataFormat(wb.createDataFormat().getFormat("#,##0.00"));
+        s.setAlignment(HorizontalAlignment.RIGHT);
+        s.setVerticalAlignment(VerticalAlignment.CENTER);
+        setBorders(s);
+        s.setFillForegroundColor(new XSSFColor(new byte[]{(byte)0xD9,(byte)0xE8,(byte)0xF5}, null));
+        s.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        return s;
+    }
+    private CellStyle reportBoldStyle(XSSFWorkbook wb) {
+        CellStyle s = wb.createCellStyle();
+        s.setFont(aptosFont(wb, true, false));
+        s.setVerticalAlignment(VerticalAlignment.CENTER);
+        setBorders(s);
+        s.setFillForegroundColor(new XSSFColor(new byte[]{(byte)0xD9,(byte)0xE8,(byte)0xF5}, null));
+        s.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        return s;
+    }
+    /**
+     * One cell style per status (3 total), created once and reused across every row.
+     * Creating a fresh CellStyle per row instead (as this used to) blows up the
+     * workbook's distinct-style count into the thousands on a large accrual table —
+     * that's what was making export slow, both to generate and to open in Excel.
+     */
+    private Map<String, CellStyle> statusStyles(XSSFWorkbook wb, CellStyle base) {
+        Map<String, CellStyle> map = new HashMap<>();
+        for (String st : REMARKS_STATUS_ORDER) {
+            CellStyle s = wb.createCellStyle();
+            s.cloneStyleFrom(base);
+            s.setFillForegroundColor(statusColor(st));
+            s.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            map.put(st, s);
+        }
+        return map;
+    }
+
+    private void reportTitle(XSSFWorkbook wb, XSSFSheet ws, String text, int span) {
+        ws.addMergedRegion(new CellRangeAddress(0, 0, 0, span - 1));
+        CellStyle titleSt = wb.createCellStyle();
+        titleSt.setFont(aptosFont(wb, true, true));
+        titleSt.setFillForegroundColor(new XSSFColor(new byte[]{(byte)11,(byte)31,(byte)58}, null));
+        titleSt.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        titleSt.setAlignment(HorizontalAlignment.CENTER);
+        titleSt.setVerticalAlignment(VerticalAlignment.CENTER);
+        Cell title = ws.createRow(0).createCell(0);
+        title.setCellValue(text);
+        title.setCellStyle(titleSt);
+        ws.getRow(0).setHeight((short) (28 * 20));
+    }
+
+    // ── Sheet 1: Open Accruals (not yet Actualized) ─────────────────
+    private void buildOpenAccrualsSheet(XSSFWorkbook wb, List<LiAccrualActualized> accruals) {
+        XSSFSheet ws = wb.createSheet("Open Accruals");
+        CellStyle hdrSt    = hdrStyle(wb);
+        CellStyle txtSt    = reportPlainStyle(wb);
+        CellStyle numSt    = reportNumStyle(wb);
+        CellStyle totalSt  = reportBoldStyle(wb);
+        CellStyle totalNum = reportBoldNumStyle(wb);
+
+        String[] headers = {
+            "Month", "Loan Application ID", "Customer Name", "Vehicle Registration Number",
+            "Channel", "HPA Status", "Loan Status", "Accrual Amount (Open)", "Remarks (Status)"
+        };
+        int[] widths = {3500,5500,6500,5500, 4000,3500,3500,4500,5500};
+        reportTitle(wb, ws, "Open Accruals — Not Yet Actualized", headers.length);
+
+        Row hRow = ws.createRow(1); hRow.setHeight((short)(22*20));
+        for (int i = 0; i < headers.length; i++) { ws.setColumnWidth(i, widths[i]); ch(hRow, i, headers[i], hdrSt); }
+
+        List<LiAccrualActualized> open = accruals.stream()
+                .filter(rec -> !"Actualized".equals(rec.getStatus()))
+                .sorted(Comparator.comparingInt((LiAccrualActualized rec) -> monthKey(rec.getMonth()))
+                        .thenComparing(LiAccrualActualized::getLoanApplicationId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.toList());
+
+        Map<String, CellStyle> txtByStatus = statusStyles(wb, txtSt);
+        Map<String, CellStyle> numByStatus = statusStyles(wb, numSt);
+
+        int dataStart = 2, r = dataStart;
+        for (LiAccrualActualized rec : open) {
+            Row row = ws.createRow(r++);
+            String status = REMARKS_STATUS_ORDER.contains(rec.getStatus()) ? rec.getStatus() : "Accrued";
+            CellStyle rowTxt = txtByStatus.get(status);
+            CellStyle rowNum = numByStatus.get(status);
+
+            ct(row, 0, rec.getMonth(), rowTxt);
+            ct(row, 1, rec.getLoanApplicationId(), rowTxt);
+            ct(row, 2, rec.getCustomerName(), rowTxt);
+            ct(row, 3, rec.getVehicleRegistrationNumber(), rowTxt);
+            ct(row, 4, rec.getChannel(), rowTxt);
+            ct(row, 5, rec.getHpaStatus(), rowTxt);
+            ct(row, 6, rec.getLoanStatus(), rowTxt);
+            setN(row, 7, rec.getAccrualAmount(), rowNum);
+            ct(row, 8, status, rowTxt);
+        }
+        int dataEnd = r - 1;
+        Row total = ws.createRow(r);
+        ct(total, 0, "Total Open Accrual", totalSt);
+        for (int i = 1; i <= 6; i++) ws.getRow(r).createCell(i).setCellStyle(totalSt);
+        Cell totCell = total.createCell(7);
+        totCell.setCellFormula(open.isEmpty()
+                ? "0" : "SUM(" + col(7) + dataStart + ":" + col(7) + dataEnd + ")");
+        totCell.setCellStyle(totalNum);
+        total.createCell(8).setCellStyle(totalSt);
+
+        if (!open.isEmpty()) ws.setAutoFilter(new CellRangeAddress(1, 1, 0, headers.length - 1));
+        ws.createFreezePane(0, 2);
+    }
+
+    // ── Full column list for Commission Statement — reflected off the entity so
+    //    every field the commission upload stores is exported, none curated out.
+    private static final List<Field> COMMISSION_REPORT_FIELDS = buildCommissionReportFields();
+    private static List<Field> buildCommissionReportFields() {
+        List<Field> fields = new ArrayList<>();
+        for (Field f : LiCommissionFile.class.getDeclaredFields()) {
+            if ("id".equals(f.getName())) continue;
+            f.setAccessible(true);
+            fields.add(f);
+        }
+        return fields;
+    }
+    private static int commissionFieldIndex(String fieldName) {
+        for (int i = 0; i < COMMISSION_REPORT_FIELDS.size(); i++)
+            if (COMMISSION_REPORT_FIELDS.get(i).getName().equals(fieldName)) return i;
+        throw new IllegalStateException("LiCommissionFile field not found: " + fieldName);
+    }
+    private String commissionColumnLabel(Field f) {
+        jakarta.persistence.Column col = f.getAnnotation(jakarta.persistence.Column.class);
+        String raw = (col != null && !col.name().isEmpty()) ? col.name() : f.getName();
+        StringBuilder sb = new StringBuilder();
+        for (String part : raw.split("_")) {
+            if (part.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1).toLowerCase());
+        }
+        return sb.toString();
+    }
+    private Object commissionFieldValue(LiCommissionFile c, Field f) {
+        try { return f.get(c); } catch (IllegalAccessException e) { return null; }
+    }
+
+    // ── Sheet 2: Commission Statement — every uploaded commission column ─
+    private void buildCommissionStatementSheet(XSSFWorkbook wb, List<LiCommissionFile> commissions) {
+        XSSFSheet ws = wb.createSheet("Commission Statement");
+        CellStyle hdrSt = hdrStyle(wb);
+        CellStyle txtSt = reportPlainStyle(wb);
+        CellStyle numSt = reportNumStyle(wb);
+        CellStyle shadedTxt = shadeStyle(wb, txtSt);
+        CellStyle shadedNum = shadeStyle(wb, numSt);
+        CellStyle totalSt  = reportBoldStyle(wb);
+        CellStyle totalNum = reportBoldNumStyle(wb);
+
+        int nCols = COMMISSION_REPORT_FIELDS.size();
+        reportTitle(wb, ws, "Commission Statement — Uploaded Commission Data (All Columns)", nCols);
+
+        Row hRow = ws.createRow(1); hRow.setHeight((short)(22*20));
+        for (int i = 0; i < nCols; i++) {
+            Field f = COMMISSION_REPORT_FIELDS.get(i);
+            ws.setColumnWidth(i, f.getType() == BigDecimal.class ? 3800 : 4800);
+            ch(hRow, i, commissionColumnLabel(f), hdrSt);
+        }
+
+        List<LiCommissionFile> sorted = commissions.stream()
+                .sorted(Comparator.comparingInt((LiCommissionFile c) -> monthKey(c.getAccrualMonth()))
+                        .thenComparing(LiCommissionFile::getPolicyNumber, Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.toList());
+
+        int dataStart = 2, r = dataStart;
+        int totalCdFinalIdx = commissionFieldIndex("totalCdFinal");
+        for (LiCommissionFile c : sorted) {
+            Row row = ws.createRow(r++);
+            boolean shade = (row.getRowNum() % 2 != 0);
+            for (int i = 0; i < nCols; i++) {
+                Field f = COMMISSION_REPORT_FIELDS.get(i);
+                Object val = commissionFieldValue(c, f);
+                if (f.getType() == BigDecimal.class) {
+                    setN(row, i, (BigDecimal) val, shade ? shadedNum : numSt);
+                } else {
+                    ct(row, i, val == null ? "" : val.toString(), shade ? shadedTxt : txtSt);
+                }
+            }
+        }
+        int dataEnd = r - 1;
+        Row total = ws.createRow(r);
+        ct(total, 0, "Total Commission (Total CD Final)", totalSt);
+        for (int i = 1; i < nCols; i++) {
+            if (i == totalCdFinalIdx) continue;
+            total.createCell(i).setCellStyle(totalSt);
+        }
+        String cdCol = col(totalCdFinalIdx);
+        Cell totCell = total.createCell(totalCdFinalIdx);
+        totCell.setCellFormula(sorted.isEmpty()
+                ? "0" : "SUM(" + cdCol + dataStart + ":" + cdCol + dataEnd + ")");
+        totCell.setCellStyle(totalNum);
+
+        if (!sorted.isEmpty()) ws.setAutoFilter(new CellRangeAddress(1, 1, 0, nCols - 1));
+        ws.createFreezePane(0, 2);
+    }
+
+    private CellStyle shadeStyle(XSSFWorkbook wb, CellStyle base) {
+        CellStyle s = wb.createCellStyle();
+        s.cloneStyleFrom(base);
+        s.setFillForegroundColor(new XSSFColor(new byte[]{(byte)0xF2,(byte)0xF2,(byte)0xF2}, null));
+        s.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        return s;
+    }
+
+    // ── Sheet 3: Working — Opening Accrual vs Actualized Invoice ────
+    // "Opening Accrual" and "Actualized Invoice" stay as booked ledger values (the
+    // Java-side sign-aware matching in processCommissionUpload can't be safely
+    // re-derived as a single spreadsheet formula — a naive SUMIF by Loan ID would
+    // double-count loans whose commission spans more than one upload month). What
+    // IS added as a live formula is a cross-check column pulling the full lifetime
+    // commission total for that Loan ID straight from the Commission Statement
+    // sheet, plus the Diff, so you can see exactly where each number comes from.
+    private void buildAccrualVsActualizedSheet(XSSFWorkbook wb, List<LiAccrualActualized> accruals) {
+        XSSFSheet ws = wb.createSheet("Working - Accrual vs Actualized");
+        CellStyle hdrSt    = hdrStyle(wb);
+        CellStyle txtSt    = reportPlainStyle(wb);
+        CellStyle numSt    = reportNumStyle(wb);
+        CellStyle totalSt  = reportBoldStyle(wb);
+        CellStyle totalNum = reportBoldNumStyle(wb);
+
+        String[] headers = {
+            "Month", "Loan Application ID", "Customer Name", "Vehicle Registration Number",
+            "Channel", "HPA Status", "Loan Status", "Opening Accrual Amount",
+            "Actualized Invoice Amount", "Commission Statement Total (Cross-Check, All Uploads)",
+            "Diff (Accrual - Invoice)", "Remarks (Status)"
+        };
+        int[] widths = {3500,5500,6500,5500, 4000,3500,3500,4500, 4500,6000,4500,5500};
+        reportTitle(wb, ws, "Working — Opening Accrual vs Actualized Invoice", headers.length);
+
+        Row hRow = ws.createRow(1); hRow.setHeight((short)(22*20));
+        for (int i = 0; i < headers.length; i++) { ws.setColumnWidth(i, widths[i]); ch(hRow, i, headers[i], hdrSt); }
+
+        List<LiAccrualActualized> sorted = accruals.stream()
+                .sorted(Comparator.comparingInt((LiAccrualActualized rec) -> monthKey(rec.getMonth()))
+                        .thenComparing(rec -> REMARKS_STATUS_ORDER.contains(rec.getStatus()) ? rec.getStatus() : "Accrued")
+                        .thenComparing(LiAccrualActualized::getLoanApplicationId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.toList());
+
+        int dataStart = 2, r = dataStart;
+        String accrualCol = col(7), invoiceCol = col(8), crossCheckCol = col(9);
+        String commLoanIdLetter  = col(commissionFieldIndex("loanApplicationId"));
+        String commCdFinalLetter = col(commissionFieldIndex("totalCdFinal"));
+        String commLoanIdRange  = "'Commission Statement'!" + commLoanIdLetter  + ":" + commLoanIdLetter;
+        String commCdFinalRange = "'Commission Statement'!" + commCdFinalLetter + ":" + commCdFinalLetter;
+
+        Map<String, CellStyle> txtByStatus = statusStyles(wb, txtSt);
+        Map<String, CellStyle> numByStatus = statusStyles(wb, numSt);
+
+        for (LiAccrualActualized rec : sorted) {
+            Row row = ws.createRow(r); int excelRow = r + 1; r++;
+            String status = REMARKS_STATUS_ORDER.contains(rec.getStatus()) ? rec.getStatus() : "Accrued";
+            CellStyle rowTxt = txtByStatus.get(status);
+            CellStyle rowNum = numByStatus.get(status);
+
+            ct(row, 0, rec.getMonth(), rowTxt);
+            ct(row, 1, rec.getLoanApplicationId(), rowTxt);
+            ct(row, 2, rec.getCustomerName(), rowTxt);
+            ct(row, 3, rec.getVehicleRegistrationNumber(), rowTxt);
+            ct(row, 4, rec.getChannel(), rowTxt);
+            ct(row, 5, rec.getHpaStatus(), rowTxt);
+            ct(row, 6, rec.getLoanStatus(), rowTxt);
+            setN(row, 7, rec.getAccrualAmount(), rowNum);
+            setN(row, 8, rec.getInvoiceAmount(), rowNum);
+
+            Cell crossCheckCell = row.createCell(9);
+            crossCheckCell.setCellFormula(
+                "SUMIF(" + commLoanIdRange + ",B" + excelRow + "," + commCdFinalRange + ")");
+            crossCheckCell.setCellStyle(rowNum);
+
+            Cell diffCell = row.createCell(10);
+            diffCell.setCellFormula(accrualCol + excelRow + "-" + invoiceCol + excelRow);
+            diffCell.setCellStyle(rowNum);
+            ct(row, 11, status, rowTxt);
+        }
+        int dataEnd = r - 1;
+        Row total = ws.createRow(r); int totalExcelRow = r + 1;
+        ct(total, 0, "Grand Total", totalSt);
+        for (int i = 1; i <= 6; i++) total.createCell(i).setCellStyle(totalSt);
+        Cell accTot = total.createCell(7);
+        accTot.setCellFormula(sorted.isEmpty() ? "0" : "SUM(" + accrualCol + dataStart + ":" + accrualCol + dataEnd + ")");
+        accTot.setCellStyle(totalNum);
+        Cell invTot = total.createCell(8);
+        invTot.setCellFormula(sorted.isEmpty() ? "0" : "SUM(" + invoiceCol + dataStart + ":" + invoiceCol + dataEnd + ")");
+        invTot.setCellStyle(totalNum);
+        Cell crossTot = total.createCell(9);
+        crossTot.setCellFormula(sorted.isEmpty() ? "0" : "SUM(" + crossCheckCol + dataStart + ":" + crossCheckCol + dataEnd + ")");
+        crossTot.setCellStyle(totalNum);
+        Cell diffTot = total.createCell(10);
+        diffTot.setCellFormula(col(7) + totalExcelRow + "-" + col(8) + totalExcelRow);
+        diffTot.setCellStyle(totalNum);
+        total.createCell(11).setCellStyle(totalSt);
+
+        if (!sorted.isEmpty()) ws.setAutoFilter(new CellRangeAddress(1, 1, 0, headers.length - 1));
+        ws.createFreezePane(0, 2);
+    }
 
     // ================================================================
     //  ACCRUAL TEMPLATE DOWNLOAD
@@ -512,7 +861,19 @@ public class LiScheduleServiceImpl implements LiScheduleService {
             if (outstanding == null || outstanding.isEmpty()) continue;
             outstanding.sort(Comparator.comparing(r -> monthKey(r.getMonth())));
 
-            LiAccrualActualized rec = outstanding.get(0);
+            // A negative commission (cancellation reversal) must net off against that
+            // loan's negative (Cancelled) accrual entry, not whichever record happens to
+            // be oldest. Matching sign-agnostically let a cancellation's negative invoice
+            // wipe out an unrelated positive (Active) accrual, while the real negative
+            // accrual it should have matched stayed stuck as "Accrued" forever.
+            int invSign = inv.signum();
+            LiAccrualActualized rec = outstanding.stream()
+                    .filter(r -> {
+                        BigDecimal amt = r.getAccrualAmount() != null ? r.getAccrualAmount() : BigDecimal.ZERO;
+                        return invSign == 0 || amt.signum() == invSign;
+                    })
+                    .findFirst()
+                    .orElse(outstanding.get(0));
             rec.setInvoiceAmount(inv.setScale(2, RoundingMode.HALF_UP));
             BigDecimal accrual = rec.getAccrualAmount() != null ? rec.getAccrualAmount() : BigDecimal.ZERO;
             rec.setDiff(accrual.subtract(inv).setScale(2, RoundingMode.HALF_UP));
@@ -524,10 +885,13 @@ public class LiScheduleServiceImpl implements LiScheduleService {
         }
         log.info("[LI Commission] Actualized {} accrual records for {}", actualized, accrualMonth);
 
-        // 5 ── Any "Accrued" record for this month with no commission match this round → Carry Forward
+        // 5 ── Any "Accrued" record with no commission match this round → Carry Forward.
+        //      Scanned across ALL months, not just accrualMonth — an older month's case
+        //      that never got actualized previously used to stay stuck as "Accrued"
+        //      forever and never surface under a later month's Carry Forward bucket.
         int carriedForward = 0;
-        for (LiAccrualActualized rec : accrualRepo.findByMonthOrderByLoanStatusAscLoanApplicationIdAsc(accrualMonth)) {
-            if ("Accrued".equals(rec.getStatus()) && !loanIdsWithCommission.contains(rec.getLoanApplicationId())) {
+        for (LiAccrualActualized rec : accrualRepo.findByStatus("Accrued")) {
+            if (!loanIdsWithCommission.contains(rec.getLoanApplicationId())) {
                 rec.setStatus("Accrual Carry Forward");
                 accrualRepo.save(rec);
                 carriedForward++;

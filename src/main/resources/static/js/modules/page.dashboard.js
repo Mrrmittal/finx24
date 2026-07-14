@@ -186,12 +186,16 @@ Router.register('dashboard', function(panel) {
 
     // Refresh live KPIs if recon was run earlier this session
     _updateDashboard();
-});
 
-// Load available periods from DB for live KPIs
-_loadDashboardPeriods();
-document.getElementById('dash-load-btn')
-    ?.addEventListener('click', _loadPeriodKPIs);
+    // Load available periods from DB for live KPIs — must run after the
+    // innerHTML above so #dash-period-pills / #dash-load-btn exist. Running
+    // this at module load time (before login/routing) fired an authenticated
+    // call with no token yet, which 401'd and triggered api.js's reload-on-401
+    // handler — reloading re-ran this same unguarded call, looping forever.
+    _loadDashboardPeriods();
+    document.getElementById('dash-load-btn')
+        ?.addEventListener('click', _loadPeriodKPIs);
+});
 
 
 // ── Called after each recon run to update dashboard live ──────────

@@ -22,6 +22,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import jakarta.servlet.http.HttpServletResponse;
 
 import java.util.List;
 
@@ -62,6 +63,16 @@ public class SecurityConfig {
                 // ✅ KEY FIX: allow iframes for H2 console
                 .headers(headers -> headers
                         .frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin)
+                )
+                // Without this, Spring Security's default Http403ForbiddenEntryPoint
+                // returns 403 for EVERY auth failure (missing/expired/invalid token) —
+                // the frontend only auto-relogs-in on 401, so an expired token surfaced
+                // as a raw "Server error (403)" instead of a silent redirect to login.
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((req, res, authEx) ->
+                                res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized — please log in again"))
+                        .accessDeniedHandler((req, res, accessEx) ->
+                                res.sendError(HttpServletResponse.SC_FORBIDDEN, "Forbidden — insufficient role"))
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC).permitAll()

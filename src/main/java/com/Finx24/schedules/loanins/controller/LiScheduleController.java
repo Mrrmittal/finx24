@@ -114,4 +114,17 @@ public class LiScheduleController {
         return ResponseEntity.ok(
                 liScheduleService.processCommissionUpload(accrualMonth, commissionFile, prFile));
     }
+
+    // ── Standard Accrual Vs Actualization Report ────────────────────
+    @GetMapping("/accrual-status-report")
+    @Operation(summary = "Download standard Accrual Vs Actualization report (Open Accruals, Commission Statement, Working)")
+    public ResponseEntity<ByteArrayResource> accrualStatusReport() throws Exception {
+        byte[] bytes = liScheduleService.generateAccrualStatusReport();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"Accrual Vs Actualization.xlsx\"")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(new ByteArrayResource(bytes));
+    }
 }
