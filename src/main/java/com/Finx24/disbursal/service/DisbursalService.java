@@ -25,4 +25,7 @@ public interface DisbursalService {
 
     /** All records for LI recon — replaces SAP HANA + Monthly DR file uploads */
     List<Map<String,Object>> getAllForRecon();
+
+    /** Search loans by Loan ID (partial) and/or status — returns full record details */
+    List<Map<String,Object>> searchLoans(String loanId, String status);
 }

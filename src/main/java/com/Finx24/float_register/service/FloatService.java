@@ -7,7 +7,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
-public interface FloatService {
+public interface
+FloatService {
     Map<String, Object> upload(MultipartFile file, String partnerCode,
                                String periodLabel, boolean allowOverwrite) throws IOException;
     Map<String, Object> uploadMaster(MultipartFile file, String periodLabel,

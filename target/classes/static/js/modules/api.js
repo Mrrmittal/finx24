@@ -216,6 +216,11 @@ const API = (() => {
     getAvailableMonths: () =>
         get('/disbursal/available-months'),
 
+    // User: search loans by Loan ID and/or status
+    searchLoans: (loanId, status) =>
+        get('/disbursal/search?loanId=' + encodeURIComponent(loanId || '') +
+            '&status=' + encodeURIComponent(status || '')),
+
     // LI Recon: get all records from DB (replaces SAP HANA + Monthly DR uploads)
     getReconData: () =>
         get('/disbursal/recon-data'),

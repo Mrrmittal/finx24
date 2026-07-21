@@ -142,6 +142,7 @@ public class DisbursalServiceImpl implements DisbursalService {
         Map<String, long[]> byCity    = new LinkedHashMap<>();
         Map<String, long[]> byHpa     = new LinkedHashMap<>();
         Map<String, double[]> byDate  = new TreeMap<>();
+        List<DisbursalRecord> activeRecords = new ArrayList<>(); // for Top 20 by gross loan amount
 
         for (DisbursalRecord r : records) {
 
@@ -165,6 +166,7 @@ public class DisbursalServiceImpl implements DisbursalService {
             if (disbInPeriod && !cancelInPeriod) {
                 // BUCKET 1: Active
                 activeCnt++;
+                activeRecords.add(r);
                 if (li > 0) {
                     liChargesCnt++;
                     liNetDisbursal += net;
@@ -212,6 +214,26 @@ public class DisbursalServiceImpl implements DisbursalService {
             byLoanBook.get(book)[1] += e.getValue()[1];
         }
 
+        // Top 20 active loans by GROSS loan amount (TOTAL_LOAN_AMOUNT)
+        List<Map<String, Object>> topLoans = activeRecords.stream()
+                .sorted((a, b) -> Double.compare(val(b.getTotalLoanAmount()), val(a.getTotalLoanAmount())))
+                .limit(20)
+                .map(r -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("loanId",        nvl(r.getLoanApplicationId()));
+                    m.put("customer",      nvl(r.getCustomerName()));
+                    m.put("segment",       nvl(r.getSegment()));
+                    m.put("channel",       nvl(r.getChannel()));
+                    m.put("city",          nvl(r.getCity()));
+                    m.put("disbDate",      r.getDisbursementDate() != null ? r.getDisbursementDate().toString() : "");
+                    m.put("grossAmount",   val(r.getTotalLoanAmount()));
+                    m.put("netDisbursal",  val(r.getNetDisbursalAmount()));
+                    m.put("liCharges",     val(r.getLiCharges()));
+                    m.put("miCharges",     val(r.getMiCharges()));
+                    return m;
+                })
+                .collect(java.util.stream.Collectors.toList());
+
         return DisbursalDashboardResponse.builder()
                 .periodFrom(from).periodTo(to)
                 .netLoanCount(activeCnt - oldMonthCnt)
@@ -230,6 +252,7 @@ public class DisbursalServiceImpl implements DisbursalService {
                 .byLoanBook(toList(byLoanBook))
                 .topCities(toList(byCity))
                 .dailyTrend(toDailyList(byDate))
+                .topLoans(topLoans)
                 .availableMonths(repo.findAvailableMonths())
                 .build();
     }
@@ -286,39 +309,36 @@ public class DisbursalServiceImpl implements DisbursalService {
         CellStyle numSt = numStyle(wb);
         CellStyle txtSt = textStyle(wb);
 
-        String[] headers = {"Loan ID","Customer","Vehicle No","Segment","Channel",
-            "HPA Status","Disb Date","Cancel Date","Loan Status","Status",
-            "City","State","Net Disbursal","Car Finance","Total Loan",
-            "Tenure","LI Charges","MI Charges","Insurance Plan"};
+        // ALL columns — derived from the full field map so every entity field is exported.
+        List<String> headers = new ArrayList<>(fullMap(new DisbursalRecord()).keySet());
         Row hRow = ws.createRow(0);
-        for (int i=0;i<headers.length;i++) { Cell c=hRow.createCell(i); c.setCellValue(headers[i]); c.setCellStyle(hdrSt); }
+        for (int i = 0; i < headers.size(); i++) {
+            Cell c = hRow.createCell(i);
+            c.setCellValue(headers.get(i));
+            c.setCellStyle(hdrSt);
+        }
 
         int r = 1;
         for (DisbursalRecord rec : records) {
             Row row = ws.createRow(r++);
-            setT(row,0,rec.getLoanApplicationId(),txtSt);
-            setT(row,1,rec.getCustomerName(),txtSt);
-            setT(row,2,rec.getVehicleRegNo(),txtSt);
-            setT(row,3,rec.getSegment(),txtSt);
-            setT(row,4,rec.getChannel(),txtSt);
-            setT(row,5,rec.getHpaStatus(),txtSt);
-            setT(row,6,d2s(rec.getDisbursementDate()),txtSt);
-            setT(row,7,d2s(rec.getCancellationDate()),txtSt);
-            setT(row,8,rec.getLoanStatus(),txtSt);
-            setT(row,9,rec.getStatus(),txtSt);
-            setT(row,10,rec.getCity(),txtSt);
-            setT(row,11,rec.getState(),txtSt);
-            setN(row,12,rec.getNetDisbursalAmount(),numSt);
-            setN(row,13,rec.getCarFinanceAmount(),numSt);
-            setN(row,14,rec.getTotalLoanAmount(),numSt);
-            setT(row,15,rec.getTenureMonths()!=null?rec.getTenureMonths().toString():"",txtSt);
-            setN(row,16,rec.getLiCharges(),numSt);
-            setN(row,17,rec.getMiCharges(),numSt);
-            setT(row,18,rec.getInsurancePlan(),txtSt);
+            Map<String,Object> vals = fullMap(rec);
+            int col = 0;
+            for (String h : headers) {
+                Object v = vals.get(h);
+                Cell c = row.createCell(col++);
+                if (v instanceof Number) {
+                    c.setCellValue(((Number) v).doubleValue());
+                    c.setCellStyle(numSt);
+                } else {
+                    c.setCellValue(v != null ? v.toString() : "");
+                    c.setCellStyle(txtSt);
+                }
+            }
         }
-        for (int i=0;i<headers.length;i++) ws.autoSizeColumn(i);
-        ws.setAutoFilter(new CellRangeAddress(0,0,0,headers.length-1));
-        ws.createFreezePane(0,1);
+        // Fixed width (autoSize over ~130 cols × many rows is too slow)
+        for (int i = 0; i < headers.size(); i++) ws.setColumnWidth(i, 4600);
+        ws.setAutoFilter(new CellRangeAddress(0, 0, 0, headers.size() - 1));
+        ws.createFreezePane(1, 1); // freeze Loan ID column + header row
     }
 
     // =============================================================
@@ -658,4 +678,157 @@ public class DisbursalServiceImpl implements DisbursalService {
     }
 
     private String nvl(String s) { return s != null ? s : ""; }
+
+    // ─────────────────────────────────────────────────────────────
+    //  SEARCH — by Loan ID (partial) and/or status → full details
+    // ─────────────────────────────────────────────────────────────
+    @Override
+    public List<Map<String,Object>> searchLoans(String loanId, String status) {
+        String lid = (loanId != null && !loanId.isBlank()) ? loanId.trim() : null;
+        String st  = (status != null && !status.isBlank()) ? status.trim() : null;
+        if (lid == null && st == null) return new ArrayList<>();
+
+        List<DisbursalRecord> found = repo.search(lid, st);
+        List<Map<String,Object>> result = new ArrayList<>();
+        for (DisbursalRecord r : found) result.add(fullMap(r));
+        log.info("[Disbursal] search loanId={} status={} → {} records", lid, st, result.size());
+        return result;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    //  FULL FIELD MAP — every column of a record (search + export)
+    //  Ordered LinkedHashMap; keys are human-readable headers.
+    // ─────────────────────────────────────────────────────────────
+    private Map<String,Object> fullMap(DisbursalRecord r) {
+        Map<String,Object> m = new LinkedHashMap<>();
+        m.put("Loan Application ID",           r.getLoanApplicationId());
+        m.put("Customer Name",                 r.getCustomerName());
+        m.put("Vehicle Registration Number",   r.getVehicleRegNo());
+        m.put("Segment",                       r.getSegment());
+        m.put("Channel",                       r.getChannel());
+        m.put("HPA Status",                    r.getHpaStatus());
+        m.put("Dealer Code",                   r.getDealerCode());
+        m.put("Disbursement Date",             d2s(r.getDisbursementDate()));
+        m.put("Cancellation Date",             d2s(r.getCancellationDate()));
+        m.put("Loan Status",                   r.getLoanStatus());
+        m.put("Status",                        r.getStatus());
+        m.put("City",                          r.getCity());
+        m.put("Pincode",                       r.getPincode());
+        m.put("State",                         r.getState());
+        m.put("City Code",                     r.getCityCode());
+        m.put("State Code",                    r.getStateCode());
+        m.put("Total Loan Amount",             r.getTotalLoanAmount());
+        m.put("Car Finance Amount",            r.getCarFinanceAmount());
+        m.put("Tenure (Months)",               r.getTenureMonths());
+        m.put("Interest Rate",                 r.getInterestRate());
+        m.put("Net Disbursal Amount",          r.getNetDisbursalAmount());
+        m.put("Actual Disbursement Amount",    r.getActualDisbursementAmount());
+        m.put("LFC Actual Disbursement Amount",r.getLfcActualDisbursementAmount());
+        m.put("Direct Credit Amount",          r.getDirectCreditAmount());
+        m.put("DF Amount",                     r.getDfAmount());
+        m.put("DRL Number",                    r.getDrlNumber());
+        m.put("Disbursement Amount",           r.getDisbursementAmount());
+        m.put("Loan Count",                    r.getLoanCount());
+        m.put("Motor Insurance Type",          r.getMotorInsuranceType());
+        m.put("Insurance Plan",                r.getInsurancePlan());
+        m.put("LI Charges",                    r.getLiCharges());
+        m.put("MI Charges",                    r.getMiCharges());
+        m.put("Pocket Insurance Charge",       r.getPocketInsuranceCharge());
+        m.put("BKawach Charges",               r.getBkawachCharges());
+        m.put("CIBIL Charges",                 r.getCibilCharges());
+        m.put("Documentation Charges",         r.getDocumentationCharges());
+        m.put("Stamp Charges",                 r.getStampCharges());
+        m.put("RTO Charges",                   r.getRtoCharges());
+        m.put("Valuation Charges",             r.getValuationCharges());
+        m.put("CHM Charges",                   r.getChmCharges());
+        m.put("FWR Charges",                   r.getFwrCharges());
+        m.put("PF Charges",                    r.getPfCharges());
+        m.put("ABC Charges",                   r.getAbcCharges());
+        m.put("EW Charges",                    r.getEwCharges());
+        m.put("AMC Charges",                   r.getAmcCharges());
+        m.put("Careplus Charges",              r.getCareplusCharges());
+        m.put("RSA Charges",                   r.getRsaCharges());
+        m.put("LFF Charges",                   r.getLffCharges());
+        m.put("BT LFC Charges",                r.getBtLfcCharges());
+        m.put("Protekt Charges",               r.getProtektCharges());
+        m.put("Protekt Pro Charges",           r.getProtektProCharges());
+        m.put("Protekt Plus Charges",          r.getProtektPlusCharges());
+        m.put("Flexi Payment Facility Charge", r.getFlexiPaymentFacilityCharge());
+        m.put("Buyer Protection Plan Charge",  r.getBuyerProtectionPlanCharge());
+        m.put("Lifetime Warranty Charge",      r.getLifetimeWarrantyCharge());
+        m.put("Party Peshi Holdback",          r.getPartyPeshiHoldback());
+        m.put("Online Challan Holdback",       r.getOnlineChallanHoldback());
+        m.put("NOC Holdback",                  r.getNocHoldback());
+        m.put("Motor Insurance Holdback",      r.getMotorInsuranceHoldback());
+        m.put("RTO Holdback",                  r.getRtoHoldback());
+        m.put("Other Holdback",                r.getOtherHoldback());
+        m.put("Offline Challan Holdback",      r.getOfflineChallanHoldback());
+        m.put("Partner Holdback",              r.getPartnerHoldback());
+        m.put("Colending Loan ID",             r.getColendingLoanId());
+        m.put("Colending Flag",                r.getColendingFlag());
+        m.put("Actual Disb Amount 1",          r.getActualDisbAmount1());
+        m.put("Actual Disb UTR 1",             r.getActualDisbUtr1());
+        m.put("Actual Disb Date 1",            d2s(r.getActualDisbDate1()));
+        m.put("Actual Payment Mode 1",         r.getActualPayMode1());
+        m.put("Actual Payment Status 1",       r.getActualPayStatus1());
+        m.put("Actual Disb Amount 2",          r.getActualDisbAmount2());
+        m.put("Actual Disb UTR 2",             r.getActualDisbUtr2());
+        m.put("Actual Disb Date 2",            d2s(r.getActualDisbDate2()));
+        m.put("Actual Payment Mode 2",         r.getActualPayMode2());
+        m.put("Actual Payment Status 2",       r.getActualPayStatus2());
+        m.put("Actual Disb Amount 3",          r.getActualDisbAmount3());
+        m.put("Actual Disb UTR 3",             r.getActualDisbUtr3());
+        m.put("Actual Disb Date 3",            d2s(r.getActualDisbDate3()));
+        m.put("Actual Payment Mode 3",         r.getActualPayMode3());
+        m.put("Actual Payment Status 3",       r.getActualPayStatus3());
+        m.put("Actual Disb Amount 4",          r.getActualDisbAmount4());
+        m.put("Actual Disb UTR 4",             r.getActualDisbUtr4());
+        m.put("Actual Disb Date 4",            d2s(r.getActualDisbDate4()));
+        m.put("Actual Payment Mode 4",         r.getActualPayMode4());
+        m.put("Actual Payment Status 4",       r.getActualPayStatus4());
+        m.put("Actual Disb Amount 5",          r.getActualDisbAmount5());
+        m.put("Actual Disb UTR 5",             r.getActualDisbUtr5());
+        m.put("Actual Disb Date 5",            d2s(r.getActualDisbDate5()));
+        m.put("Actual Payment Mode 5",         r.getActualPayMode5());
+        m.put("LFC Disb Amount 1",             r.getLfcDisbAmount1());
+        m.put("LFC Disb UTR 1",                r.getLfcDisbUtr1());
+        m.put("LFC Disb Date 1",               d2s(r.getLfcDisbDate1()));
+        m.put("LFC Payment Mode 1",            r.getLfcPayMode1());
+        m.put("LFC Payment Status 1",          r.getLfcPayStatus1());
+        m.put("LFC Disb Amount 2",             r.getLfcDisbAmount2());
+        m.put("LFC Disb UTR 2",                r.getLfcDisbUtr2());
+        m.put("LFC Disb Date 2",               d2s(r.getLfcDisbDate2()));
+        m.put("LFC Payment Mode 2",            r.getLfcPayMode2());
+        m.put("LFC Payment Status 2",          r.getLfcPayStatus2());
+        m.put("LFC Disb Amount 3",             r.getLfcDisbAmount3());
+        m.put("LFC Disb UTR 3",                r.getLfcDisbUtr3());
+        m.put("LFC Disb Date 3",               d2s(r.getLfcDisbDate3()));
+        m.put("LFC Payment Mode 3",            r.getLfcPayMode3());
+        m.put("LFC Payment Status 3",          r.getLfcPayStatus3());
+        m.put("LFC Disb Amount 4",             r.getLfcDisbAmount4());
+        m.put("LFC Disb UTR 4",                r.getLfcDisbUtr4());
+        m.put("LFC Disb Date 4",               d2s(r.getLfcDisbDate4()));
+        m.put("LFC Payment Mode 4",            r.getLfcPayMode4());
+        m.put("LFC Payment Status 4",          r.getLfcPayStatus4());
+        m.put("PMax Sheet Timestamp",          r.getPMaxSheetTimestamp());
+        m.put("PMax Email Address",            r.getPMaxEmailAddress());
+        m.put("PMax Vehicle Number",           r.getPMaxVehicleNumber());
+        m.put("PMax Car Finance Amount",       r.getPMaxCarFinanceAmount());
+        m.put("PMaxx Total Charges",           r.getPmaxxTotalCharges());
+        m.put("PMaxx Suraksha",                r.getPmaxxSuraksha());
+        m.put("PMaxx MI",                      r.getPmaxxMi());
+        m.put("PMaxx Other Charges",           r.getPmaxxOtherCharges());
+        m.put("PMaxx PF Documents Charges",    r.getPmaxxPfDocumentsCharges());
+        m.put("PMax Subfinancer",              r.getPMaxSubfinancer());
+        m.put("Pennant Disbursal Date",        d2s(r.getPennantDisbursalDate()));
+        m.put("Pennant First EMI Amount",      r.getPennantFirstEmiAmount());
+        m.put("Pennant First EMI Date",        d2s(r.getPennantFirstEmiDate()));
+        m.put("Pennant EMI Amount",            r.getPennantEmiAmount());
+        m.put("Amount Check Flag",             r.getAmountCheckFlag());
+        m.put("Accounting Flag",               r.getAccountingFlag());
+        m.put("Uploaded By",                   r.getUploadedBy());
+        m.put("Uploaded At",                   r.getUploadedAt() != null ? r.getUploadedAt().toString() : "");
+        m.put("Last Updated At",               r.getLastUpdatedAt() != null ? r.getLastUpdatedAt().toString() : "");
+        return m;
+    }
 }

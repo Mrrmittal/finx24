@@ -32,6 +32,7 @@ public class DisbursalDashboardResponse {
     private List<Map<String, Object>> byLoanBook;  // CARS24 Book, Bajaj Colending, PMax Book
     private List<Map<String, Object>> topCities;
     private List<Map<String, Object>> dailyTrend;
+    private List<Map<String, Object>> topLoans;    // Top 20 active loans by gross (TOTAL_LOAN_AMOUNT)
 
     // ── Calendar picker data ──────────────────────────────────────
     private List<Map<String, Object>> availableMonths;

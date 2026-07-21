@@ -71,6 +71,32 @@ Router.register('disbursal', function(panel) {
           '</div>'
           : '') +
 
+      // ── Loan Search ────────────────────────────────────────────
+      '<div class="card" style="margin-bottom:16px">' +
+      '<div class="card-header">' +
+      '<span class="card-title">🔍 Loan Search</span>' +
+      '<span style="font-size:11px;color:var(--muted)">By Loan ID &amp; status · shows all fields</span>' +
+      '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">' +
+      '<div>' +
+      '<div style="font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Loan ID</div>' +
+      '<input type="text" class="form-input" id="disb-search-id" placeholder="e.g. 1234567 (partial OK)" style="width:240px">' +
+      '</div>' +
+      '<div>' +
+      '<div style="font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Status</div>' +
+      '<select class="form-input" id="disb-search-status" style="width:210px">' +
+      '<option value="">Any status</option>' +
+      '<option value="Active">Active</option>' +
+      '<option value="Cancelled">Cancelled</option>' +
+      '<option value="Same Month Cancellation">Same Month Cancellation</option>' +
+      '<option value="Old Month Cancellation">Old Month Cancellation</option>' +
+      '</select>' +
+      '</div>' +
+      '<button class="btn-g" id="disb-search-btn" style="padding:9px 24px">🔍 Search</button>' +
+      '</div>' +
+      '<div id="disb-search-results" style="margin-top:14px"></div>' +
+      '</div>' +
+
       '<div id="disb-hint" style="display:none;margin-bottom:12px"></div>' +
 
       '<div id="disb-dashboard" style="display:none">' +
@@ -89,8 +115,9 @@ Router.register('disbursal', function(panel) {
       '<div class="card"><div class="card-header"><span class="card-title">Cancellation Summary</span></div><div id="disb-cancel-summary"></div></div>' +
       '</div>' +
       '<div class="card">' +
-      '<div class="card-header"><span class="card-title">Daily Disbursal Trend</span></div>' +
-      '<div class="chart-area"><canvas id="disb-trend-chart" height="120"></canvas></div>' +
+      '<div class="card-header"><span class="card-title">Top 20 Loans by Gross Loan Amount</span>' +
+      '<span style="font-size:10px;color:var(--muted)">Active loans · by Total Loan Amount</span></div>' +
+      '<div id="disb-toploans-table"></div>' +
       '</div>' +
       '</div>';
 
@@ -104,6 +131,14 @@ Router.register('disbursal', function(panel) {
 
   document.getElementById('disb-export-btn')
       .addEventListener('click', _exportExcel);
+
+  document.getElementById('disb-search-btn')
+      .addEventListener('click', _searchLoans);
+
+  document.getElementById('disb-search-id')
+      .addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') _searchLoans();
+      });
 
   if (isAdmin) {
     document.getElementById('disb-upload-input')
@@ -338,13 +373,35 @@ Router.register('disbursal', function(panel) {
       cEl.innerHTML = cHtml + '</div>';
     }
 
-    // Daily trend chart
-    if (d.dailyTrend && d.dailyTrend.length && typeof Charts !== 'undefined') {
-      setTimeout(function() {
-        Charts.renderDisbursalTrend('disb-trend-chart', d.dailyTrend.map(function(t) {
-          return { date: t.date || t.DATE || t.dt, amount: t.amount || t.AMOUNT || 0, count: t.count || t.COUNT || 0 };
-        }));
-      }, 80);
+    // Top 20 loans by gross loan amount
+    var tlEl = document.getElementById('disb-toploans-table');
+    if (tlEl) {
+      var loans = d.topLoans || [];
+      if (!loans.length) {
+        tlEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">No active loans in this period</div>';
+      } else {
+        var th = '<table class="data-table"><thead><tr>'
+            + '<th style="width:36px">#</th>'
+            + '<th>Loan ID</th><th>Customer</th><th>Segment</th><th>Channel</th><th>City</th>'
+            + '<th>Disb Date</th>'
+            + '<th style="text-align:right">Gross Loan Amt</th>'
+            + '<th style="text-align:right">Net Disbursal</th>'
+            + '</tr></thead><tbody>';
+        loans.forEach(function(l, i) {
+          th += '<tr>'
+              + '<td style="color:var(--muted)">' + (i + 1) + '</td>'
+              + '<td style="font-weight:600">' + (l.loanId || '–') + '</td>'
+              + '<td>' + (l.customer || '–') + '</td>'
+              + '<td>' + (l.segment || '–') + '</td>'
+              + '<td>' + (l.channel || '–') + '</td>'
+              + '<td>' + (l.city || '–') + '</td>'
+              + '<td>' + (l.disbDate || '–') + '</td>'
+              + '<td style="text-align:right;font-weight:600">' + inr(l.grossAmount) + '</td>'
+              + '<td style="text-align:right">' + inr(l.netDisbursal) + '</td>'
+              + '</tr>';
+        });
+        tlEl.innerHTML = th + '</tbody></table>';
+      }
     }
 
     window._lastDisbResult = d;
@@ -375,6 +432,95 @@ Router.register('disbursal', function(panel) {
     var a    = document.createElement('a');
     a.href = url; a.download = 'Cities_Breakdown.csv'; a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // ================================================================
+  //  LOAN SEARCH
+  // ================================================================
+  async function _searchLoans() {
+    var id     = document.getElementById('disb-search-id').value.trim();
+    var status = document.getElementById('disb-search-status').value;
+    var el     = document.getElementById('disb-search-results');
+
+    if (!id && !status) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--red)">Enter a Loan ID or pick a status to search.</div>';
+      return;
+    }
+
+    var btn = document.getElementById('disb-search-btn');
+    btn.textContent = '⏳ Searching…'; btn.disabled = true;
+    el.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px 0">Searching…</div>';
+
+    try {
+      var res  = await API.Disbursal.searchLoans(id, status);
+      var rows = (res && res.data) ? res.data : [];
+      _renderSearchResults(rows);
+    } catch(e) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--red)">Search failed: ' + e.message + '</div>';
+    } finally {
+      btn.textContent = '🔍 Search'; btn.disabled = false;
+    }
+  }
+
+  function _renderSearchResults(rows) {
+    var el = document.getElementById('disb-search-results');
+    if (!rows.length) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px 0">No loans found.</div>';
+      return;
+    }
+    var inr = function(v) {
+      return '₹' + Number(v || 0).toLocaleString('en-IN', {maximumFractionDigits:0});
+    };
+    var sv = function(v) { return (v === null || v === undefined || v === '') ? '–' : v; };
+
+    var h = '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'
+        + rows.length + ' loan(s) found — click a row to expand all fields</div>'
+        + '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'
+        + '<th>Loan ID</th><th>Customer</th><th>Segment</th><th>Channel</th><th>City</th>'
+        + '<th>Disb Date</th><th>Loan Status</th><th>Status</th>'
+        + '<th style="text-align:right">Total Loan</th><th style="text-align:right">Net Disbursal</th>'
+        + '</tr></thead><tbody>';
+
+    rows.forEach(function(r, i) {
+      h += '<tr class="disb-search-row" data-idx="' + i + '" style="cursor:pointer">'
+          + '<td style="font-weight:600">' + sv(r['Loan Application ID']) + '</td>'
+          + '<td>' + sv(r['Customer Name']) + '</td>'
+          + '<td>' + sv(r['Segment']) + '</td>'
+          + '<td>' + sv(r['Channel']) + '</td>'
+          + '<td>' + sv(r['City']) + '</td>'
+          + '<td>' + sv(r['Disbursement Date']) + '</td>'
+          + '<td>' + sv(r['Loan Status']) + '</td>'
+          + '<td>' + sv(r['Status']) + '</td>'
+          + '<td style="text-align:right">' + inr(r['Total Loan Amount']) + '</td>'
+          + '<td style="text-align:right">' + inr(r['Net Disbursal Amount']) + '</td>'
+          + '</tr>'
+          + '<tr class="disb-search-detail" data-detail="' + i + '" style="display:none">'
+          + '<td colspan="10" style="background:rgba(11,31,58,0.03);padding:12px">'
+          + _detailGrid(r) + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+    el.innerHTML = h;
+
+    el.querySelectorAll('.disb-search-row').forEach(function(row) {
+      row.addEventListener('click', function() {
+        var det = el.querySelector('[data-detail="' + this.dataset.idx + '"]');
+        if (det) det.style.display = (det.style.display === 'none') ? 'table-row' : 'none';
+      });
+    });
+  }
+
+  function _detailGrid(r) {
+    var cells = '';
+    Object.keys(r).forEach(function(k) {
+      var v = r[k];
+      if (v === null || v === undefined || v === '') return;  // hide blanks
+      cells += '<div style="padding:4px 8px;border-radius:4px;background:#fff;border:1px solid rgba(11,31,58,0.06)">'
+          + '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">' + k + '</div>'
+          + '<div style="font-size:12px;color:var(--navy);font-weight:500;word-break:break-word">' + v + '</div>'
+          + '</div>';
+    });
+    return '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px">'
+        + cells + '</div>';
   }
 
   // ================================================================

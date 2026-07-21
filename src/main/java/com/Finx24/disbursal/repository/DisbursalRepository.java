@@ -165,6 +165,20 @@ public interface DisbursalRepository extends JpaRepository<DisbursalRecord, Stri
             @Param("from") LocalDate from,
             @Param("to")   LocalDate to);
 
+    // ── Loan search: by Loan ID (partial) and/or status ──────────
+    // Matches loanApplicationId (contains) and/or loanStatus / status (exact, case-insensitive)
+    @Query("""
+        SELECT r FROM DisbursalRecord r
+        WHERE (:loanId IS NULL OR LOWER(r.loanApplicationId) LIKE LOWER(CONCAT('%', :loanId, '%')))
+          AND (:status IS NULL
+               OR LOWER(r.loanStatus) = LOWER(:status)
+               OR LOWER(r.status)     = LOWER(:status))
+        ORDER BY r.disbursementDate DESC NULLS LAST
+        """)
+    List<DisbursalRecord> search(
+            @Param("loanId") String loanId,
+            @Param("status") String status);
+
     // ── LI Schedule: Active records by DISBURSEMENT_DATE ─────────
     // LI Schedule — Active: disbDate IN period AND cancelDate NULL or after period
     @Query("""

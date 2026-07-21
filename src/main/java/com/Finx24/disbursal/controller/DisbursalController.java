@@ -93,6 +93,22 @@ public class DisbursalController {
     }
 
     // ─────────────────────────────────────────────────────────────
+    //  USER + ADMIN — Search a loan by Loan ID and/or status
+    // ─────────────────────────────────────────────────────────────
+    @GetMapping("/search")
+    @Operation(summary = "Search loans by Loan ID and/or status",
+               description = "Partial Loan ID match + optional status filter. Returns full record details.")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> search(
+            @RequestParam(required = false) String loanId,
+            @RequestParam(required = false) String status
+    ) {
+        log.info("[Disbursal] Search: loanId={} status={}", loanId, status);
+        List<Map<String, Object>> results = disbursalService.searchLoans(loanId, status);
+        return ResponseEntity.ok(ApiResponse.ok(results,
+                results.size() + " loan(s) found"));
+    }
+
+    // ─────────────────────────────────────────────────────────────
     //  Available months (for calendar picker)
     // ─────────────────────────────────────────────────────────────
     @GetMapping("/available-months")
