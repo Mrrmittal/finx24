@@ -78,12 +78,12 @@
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- ── Database — SQL Server ────────────────────────────── -->
-<!--		<dependency>-->
-<!--			<groupId>com.microsoft.sqlserver</groupId>-->
-<!--			<artifactId>mssql-jdbc</artifactId>-->
-<!--			<scope>runtime</scope>-->
-<!--		</dependency>-->
+		<!-- ── Database — MySQL ─────────────────────────────────── -->
+		<dependency>
+			<groupId>com.mysql</groupId>
+			<artifactId>mysql-connector-j</artifactId>
+			<scope>runtime</scope>
+		</dependency>
 
 		<!-- ── DB Migrations ─────────────────────────────────────── -->
 		<dependency>
@@ -92,7 +92,7 @@
 		</dependency>
 		<dependency>
 			<groupId>org.flywaydb</groupId>
-			<artifactId>flyway-sqlserver</artifactId>
+			<artifactId>flyway-mysql</artifactId>
 		</dependency>
 
 		<!-- ── Excel Processing (Apache POI) ────────────────────── -->
@@ -147,11 +147,11 @@
 			<artifactId>spring-security-test</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<!-- H2 in-memory DB for unit tests -->
+		<!-- H2 in-memory DB — kept for tests only, no longer the runtime DB -->
 		<dependency>
 			<groupId>com.h2database</groupId>
 			<artifactId>h2</artifactId>
-			<scope>runtime</scope>
+			<scope>test</scope>
 		</dependency>
 
 	</dependencies>
