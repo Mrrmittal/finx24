@@ -611,13 +611,22 @@ public class FloatServiceImpl implements FloatService {
             "policyno_endno");     // ICICI
 
         // ── Reg No (MI) / Loan ID (LI) ──────────────────────────
-        // LI uses "Loan ID", all MI partners use Reg Number
+        // LI uses "Loan ID", all MI partners use some spelling of vehicle
+        // registration number — source files are not consistent about it,
+        // so this list covers the variants seen across partner exports.
         cm.loanIdIdx = first(ci,
             "Reg No",              // Go Digit MI / ICICI / TATA AIG col 42
             "Reg number",          // Kotak
             "Reg Number",          // TATA AIG col 31
-            "REG_NO","Reg. No.",
-            "Registration No.","REGN_NO",
+            "REG_NO","Reg. No.","Reg.No","RegNo",
+            "Registration No.","Registration No","Registration Number",
+            "REGN_NO","REGISTRATION_NUMBER",
+            "Car Reg No","Car Reg. No.","Car Reg Number","Car Registration Number",
+            "Car Number","Car No","CAR_NO","CAR_REG_NO",
+            "Veh Reg No","Veh Reg. No.","VEH_REG_NO",
+            "Vehicle Number","Vehicle No","Vehicle Reg No","Vehicle Reg. No.",
+            "VEHICLE_NUMBER","VEHICLE_NO","VEHICLE_REG_NO",
+            "Veh Num","Veh No","VEH_NUM","VEH_NO",
             "Loan ID","LOAN_ID","loan_id");  // LI only
 
         // ── Receipt Status (Kotak only → stored in floatType) ───

@@ -19,7 +19,7 @@ import java.time.LocalDate;
  *   Kotak LI        → -₹10,530.00    (GL 8503598, Parent 13126064) [as on Mar'26]
  *   TATA AIG GS     → ₹47,35,251     (GL 6000015)
  *   ICICI GS        → ₹36,14,011     (GL 6000005)
- *   Go Digit GS     → ₹14,56,622.87  (GL 6000000)
+ *   Go Digit GS     → ₹16,37,675     (GL 6000000)
  *   Kotak GS        → ₹29,59,582     (GL 6000002)
  *   United GS       → ₹28,077        (GL 6000007)
  *   Go Digit I24    → ₹0             (GL 6000030)
@@ -75,8 +75,8 @@ public class FloatDataInitializer implements ApplicationRunner {
             log.info("[Init] ICICI GS: ₹36,14,011");
         }
         if (goDigitGsRepo.findByPeriodLabelOrderByTransDateAsc("Opening Balance").isEmpty()) {
-            goDigitGsRepo.save(build(new FloatGoDigitGS(), "Mar'25", MAR25, new BigDecimal("1456622.87")));
-            log.info("[Init] Go Digit GS: ₹14,56,622.87");
+            goDigitGsRepo.save(build(new FloatGoDigitGS(), "Mar'25", MAR25, new BigDecimal("1637675")));
+            log.info("[Init] Go Digit GS: ₹16,37,675");
         }
         {
             var kotakGsOb = kotakGsRepo.findByPeriodLabelOrderByTransDateAsc("Opening Balance");

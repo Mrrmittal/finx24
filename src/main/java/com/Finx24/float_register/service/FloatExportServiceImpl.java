@@ -68,7 +68,7 @@ public class FloatExportServiceImpl implements FloatExportService {
             Map.entry("Kotak_LI",             new BigDecimal("-10530.00")),
             Map.entry("Tata_AIG_MI_GS",       new BigDecimal("4735251")),
             Map.entry("ICICI_Lombard_MI_GS",  new BigDecimal("3614011")),
-            Map.entry("Go_Digit_MI_GS",       new BigDecimal("1456622.87")),
+            Map.entry("Go_Digit_MI_GS",       new BigDecimal("1637675")),
             Map.entry("Kotak_MI_GS",          new BigDecimal("2942016.00")),
             Map.entry("United_MI_GS",         new BigDecimal("28077")),
             Map.entry("Go_Digit_INSURE24",    BigDecimal.ZERO),
