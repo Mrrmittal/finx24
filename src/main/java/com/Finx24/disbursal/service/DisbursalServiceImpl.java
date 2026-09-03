@@ -41,19 +41,24 @@ public class DisbursalServiceImpl implements DisbursalService {
     @Transactional
     public DisbursalUploadResponse upload(MultipartFile file, String uploadedBy) throws IOException {
 
-        Workbook wb    = WorkbookFactory.create(file.getInputStream());
-        Sheet    sheet = wb.getSheetAt(0);
+        Workbook wb = WorkbookFactory.create(file.getInputStream());
 
-        // ── Find header row (scan first 10 rows for LOAN_APPLICATION_ID) ──
-        Row hdr = null;
-        for (int i = 0; i <= Math.min(10, sheet.getLastRowNum()); i++) {
-            Row r = sheet.getRow(i);
-            if (r == null) continue;
-            if ("LOAN_APPLICATION_ID".equalsIgnoreCase(cellToString(r.getCell(0)).trim())) {
-                hdr = r; break;
+        // ── Find header row (scan first 10 rows of EVERY sheet for LOAN_APPLICATION_ID) ──
+        // The data sheet isn't always index 0 — some months' reports add a Summary/Pivot
+        // sheet ahead of "Disbursement Data", so don't assume sheet order.
+        Sheet sheet = null;
+        Row   hdr   = null;
+        for (int s = 0; s < wb.getNumberOfSheets() && hdr == null; s++) {
+            Sheet candidate = wb.getSheetAt(s);
+            for (int i = 0; i <= Math.min(10, candidate.getLastRowNum()); i++) {
+                Row r = candidate.getRow(i);
+                if (r == null) continue;
+                if ("LOAN_APPLICATION_ID".equalsIgnoreCase(cellToString(r.getCell(0)).trim())) {
+                    sheet = candidate; hdr = r; break;
+                }
             }
         }
-        if (hdr == null) throw new IllegalArgumentException("Header row not found (LOAN_APPLICATION_ID expected in col A)");
+        if (hdr == null) throw new IllegalArgumentException("Header row not found (LOAN_APPLICATION_ID expected in col A of any sheet)");
 
         // Build column index map — reject duplicate headers instead of silently
         // letting the later column overwrite the earlier one's mapping.
@@ -61,7 +66,7 @@ public class DisbursalServiceImpl implements DisbursalService {
         List<String> duplicateHeaders = new ArrayList<>();
         for (int i = 0; i <= hdr.getLastCellNum(); i++) {
             Cell c = hdr.getCell(i); if (c == null) continue;
-            String name = cellToString(c).trim().toUpperCase();
+            String name = normalizeHeader(cellToString(c));
             if (name.isEmpty() || name.startsWith("UNNAMED")) continue;
             if (colIdx.containsKey(name)) {
                 duplicateHeaders.add(name + " (columns " + (colIdx.get(name) + 1) + " and " + (i + 1) + ")");
@@ -84,9 +89,10 @@ public class DisbursalServiceImpl implements DisbursalService {
             String loanId = str(row, colIdx, "LOAN_APPLICATION_ID");
             if (loanId == null || loanId.isBlank()) continue;
 
-            // Read cancel date — try both column name variants
+            // Read cancel date — try all known column name variants
             LocalDate cancelDate = date(row, colIdx, "CANCELLATION_DATE");
             if (cancelDate == null) cancelDate = date(row, colIdx, "LOAN_CANCELLATION_DATE");
+            if (cancelDate == null) cancelDate = date(row, colIdx, "CANCELLED_DATE");
 
             LocalDate disbDate = date(row, colIdx, "DISBURSEMENT_DATE");
 
@@ -363,9 +369,9 @@ public class DisbursalServiceImpl implements DisbursalService {
             .hpaStatus(str(row,idx,"HPA_STATUS")).dealerCode(str(row,idx,"DEALER_CODE"))
             .disbursementDate(date(row,idx,"DISBURSEMENT_DATE"))
             .cancellationDate(
-                    date(row,idx,"CANCELLATION_DATE") != null
-                    ? date(row,idx,"CANCELLATION_DATE")
-                    : date(row,idx,"LOAN_CANCELLATION_DATE")
+                    date(row,idx,"CANCELLATION_DATE") != null      ? date(row,idx,"CANCELLATION_DATE")
+                    : date(row,idx,"LOAN_CANCELLATION_DATE") != null ? date(row,idx,"LOAN_CANCELLATION_DATE")
+                    : date(row,idx,"CANCELLED_DATE")
                     // null stays null — no disbDate fallback
                 )
             .loanStatus(str(row,idx,"LOAN_STATUS")).status(str(row,idx,"STATUS"))
@@ -580,14 +586,21 @@ public class DisbursalServiceImpl implements DisbursalService {
         };
     }
 
+    // Normalizes a header name for matching: trims, upper-cases, and collapses
+    // any run of whitespace to a single underscore, so "Cancelled Date" and
+    // "CANCELLED_DATE" (or extra spacing from month to month) resolve the same.
+    private String normalizeHeader(String s) {
+        return s == null ? "" : s.trim().toUpperCase().replaceAll("\\s+", "_");
+    }
+
     private String str(Row row, Map<String,Integer> idx, String col) {
-        Integer i = idx.get(col.toUpperCase());
+        Integer i = idx.get(normalizeHeader(col));
         if (i == null) return null;
         return cellToString(row.getCell(i));
     }
 
     private BigDecimal num(Row row, Map<String,Integer> idx, String col) {
-        Integer i = idx.get(col.toUpperCase());
+        Integer i = idx.get(normalizeHeader(col));
         if (i == null) return null;
         Cell c = row.getCell(i);
         if (c == null || c.getCellType() == CellType.BLANK) return null;
@@ -599,7 +612,7 @@ public class DisbursalServiceImpl implements DisbursalService {
     }
 
     private LocalDate date(Row row, Map<String,Integer> idx, String col) {
-        Integer i = idx.get(col.toUpperCase());
+        Integer i = idx.get(normalizeHeader(col));
         if (i == null) return null;
         Cell c = row.getCell(i);
         if (c == null || c.getCellType() == CellType.BLANK) return null;
