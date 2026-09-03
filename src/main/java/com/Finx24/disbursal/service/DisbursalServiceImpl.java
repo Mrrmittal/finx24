@@ -55,12 +55,22 @@ public class DisbursalServiceImpl implements DisbursalService {
         }
         if (hdr == null) throw new IllegalArgumentException("Header row not found (LOAN_APPLICATION_ID expected in col A)");
 
-        // Build column index map
+        // Build column index map — reject duplicate headers instead of silently
+        // letting the later column overwrite the earlier one's mapping.
         Map<String, Integer> colIdx = new HashMap<>();
+        List<String> duplicateHeaders = new ArrayList<>();
         for (int i = 0; i <= hdr.getLastCellNum(); i++) {
             Cell c = hdr.getCell(i); if (c == null) continue;
             String name = cellToString(c).trim().toUpperCase();
-            if (!name.isEmpty() && !name.startsWith("UNNAMED")) colIdx.put(name, i);
+            if (name.isEmpty() || name.startsWith("UNNAMED")) continue;
+            if (colIdx.containsKey(name)) {
+                duplicateHeaders.add(name + " (columns " + (colIdx.get(name) + 1) + " and " + (i + 1) + ")");
+            }
+            colIdx.put(name, i);
+        }
+        if (!duplicateHeaders.isEmpty()) {
+            throw new IllegalArgumentException("Duplicate column header(s) found in uploaded file: "
+                    + String.join(", ", duplicateHeaders) + ". Please fix the file and re-upload.");
         }
         log.info("[Disbursal] Upload by={} file={} headers={}", uploadedBy, file.getOriginalFilename(), colIdx.size());
 
@@ -680,7 +690,7 @@ public class DisbursalServiceImpl implements DisbursalService {
     private String nvl(String s) { return s != null ? s : ""; }
 
     // ─────────────────────────────────────────────────────────────
-    //  SEARCH — by Loan ID (partial) and/or status → full details
+    //  SEARCH — by Loan ID or Vehicle Reg No (partial) and/or status → full details
     // ─────────────────────────────────────────────────────────────
     @Override
     public List<Map<String,Object>> searchLoans(String loanId, String status) {

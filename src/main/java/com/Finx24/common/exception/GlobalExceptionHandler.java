@@ -2,6 +2,7 @@ package com.Finx24.common.exception;
 
 import com.Finx24.common.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -77,6 +78,28 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(ApiResponse.error("File size exceeds the 50MB limit.", "FILE_TOO_LARGE"));
+    }
+
+    // ── Bad request content (e.g. malformed/duplicate columns in an upload) ─
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<Void>> handleIllegalArgument(IllegalArgumentException ex) {
+        log.warn("[IllegalArgumentException] {}", ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(ex.getMessage(), "INVALID_REQUEST"));
+    }
+
+    // ── DB constraint violations (e.g. value too large/wrong type for a column) ─
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        log.error("[DataIntegrityViolationException] {}", ex.getMessage(), ex);
+        String detail = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+        return ResponseEntity
+                .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ApiResponse.error(
+                        "One or more values in the uploaded file are invalid for their column ("
+                                + detail + "). Please check the file and try again.",
+                        "DATA_INTEGRITY_ERROR"));
     }
 
     // ── Catch-all ────────────────────────────────────────────────
