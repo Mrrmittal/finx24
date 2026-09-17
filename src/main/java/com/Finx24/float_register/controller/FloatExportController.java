@@ -17,16 +17,21 @@ public class FloatExportController {
     /**
      * GET /float/export?category=LI&month=Apr'26
      * GET /float/export?category=MI&month=Apr'26
+     * GET /float/export?category=MI&month=Apr'26&toMonth=Jun'26   (period range)
      */
     @GetMapping("/export")
     public ResponseEntity<byte[]> export(
             @RequestParam(defaultValue = "MI") String category,
-            @RequestParam String month) {
+            @RequestParam String month,
+            @RequestParam(required = false) String toMonth) {
         try {
-            log.info("[Float Export] category={} month={}", category, month);
-            byte[] data = exportService.generateMonthReport(category, month);
-            String safe = month.replace("'", "");
-            String filename = category + "_Float_Register_" + safe + ".xlsx";
+            String to = (toMonth == null || toMonth.isBlank()) ? month : toMonth;
+            log.info("[Float Export] category={} from={} to={}", category, month, to);
+            byte[] data = exportService.generateReport(category, month, to);
+            String safeFrom = month.replace("'", "");
+            String safeTo   = to.replace("'", "");
+            String filename = category + "_Float_Register_" + safeFrom
+                    + (safeTo.equals(safeFrom) ? "" : "_to_" + safeTo) + ".xlsx";
             return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"" + filename + "\"")

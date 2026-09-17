@@ -75,12 +75,12 @@ Router.register('disbursal', function(panel) {
       '<div class="card" style="margin-bottom:16px">' +
       '<div class="card-header">' +
       '<span class="card-title">🔍 Loan Search</span>' +
-      '<span style="font-size:11px;color:var(--muted)">By Loan ID &amp; status · shows all fields</span>' +
+      '<span style="font-size:11px;color:var(--muted)">By Loan ID or Reg Number &amp; status · shows all fields</span>' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">' +
       '<div>' +
-      '<div style="font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Loan ID</div>' +
-      '<input type="text" class="form-input" id="disb-search-id" placeholder="e.g. 1234567 (partial OK)" style="width:240px">' +
+      '<div style="font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Loan ID / Reg Number</div>' +
+      '<input type="text" class="form-input" id="disb-search-id" placeholder="e.g. 1234567 or MH12AB1234 (partial OK)" style="width:260px">' +
       '</div>' +
       '<div>' +
       '<div style="font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Status</div>' +
@@ -443,7 +443,7 @@ Router.register('disbursal', function(panel) {
     var el     = document.getElementById('disb-search-results');
 
     if (!id && !status) {
-      el.innerHTML = '<div style="font-size:12px;color:var(--red)">Enter a Loan ID or pick a status to search.</div>';
+      el.innerHTML = '<div style="font-size:12px;color:var(--red)">Enter a Loan ID / Reg Number or pick a status to search.</div>';
       return;
     }
 

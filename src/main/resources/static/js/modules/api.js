@@ -216,7 +216,7 @@ const API = (() => {
     getAvailableMonths: () =>
         get('/disbursal/available-months'),
 
-    // User: search loans by Loan ID and/or status
+    // User: search loans by Loan ID or Vehicle Reg No, and/or status
     searchLoans: (loanId, status) =>
         get('/disbursal/search?loanId=' + encodeURIComponent(loanId || '') +
             '&status=' + encodeURIComponent(status || '')),

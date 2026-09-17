@@ -165,11 +165,13 @@ public interface DisbursalRepository extends JpaRepository<DisbursalRecord, Stri
             @Param("from") LocalDate from,
             @Param("to")   LocalDate to);
 
-    // ── Loan search: by Loan ID (partial) and/or status ──────────
-    // Matches loanApplicationId (contains) and/or loanStatus / status (exact, case-insensitive)
+    // ── Loan search: by Loan ID OR Vehicle Reg No (partial) and/or status ──
+    // Matches loanApplicationId OR vehicleRegNo (contains) and/or loanStatus / status (exact, case-insensitive)
     @Query("""
         SELECT r FROM DisbursalRecord r
-        WHERE (:loanId IS NULL OR LOWER(r.loanApplicationId) LIKE LOWER(CONCAT('%', :loanId, '%')))
+        WHERE (:loanId IS NULL
+               OR LOWER(r.loanApplicationId) LIKE LOWER(CONCAT('%', :loanId, '%'))
+               OR LOWER(r.vehicleRegNo)      LIKE LOWER(CONCAT('%', :loanId, '%')))
           AND (:status IS NULL
                OR LOWER(r.loanStatus) = LOWER(:status)
                OR LOWER(r.status)     = LOWER(:status))

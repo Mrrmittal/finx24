@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.apache.poi.xssf.usermodel.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -306,21 +307,27 @@ public class DisbursalServiceImpl implements DisbursalService {
             else if (!disbInPeriod && cancelInPeriod)  oldMonthList.add(r);
         }
 
-        XSSFWorkbook wb = new XSSFWorkbook();
-        buildExportSheet(wb, "Loan Active",               activeList,    from, to);
-        buildExportSheet(wb, "Same Month Cancellation",   sameMonthList, from, to);
-        buildExportSheet(wb, "Old Month Cancellation",    oldMonthList,  from, to);
+        // Streaming workbook — keeps only a window of rows in memory and flushes
+        // the rest to disk, so exports no longer scale with JVM heap size.
+        SXSSFWorkbook wb = new SXSSFWorkbook(100);
+        try {
+            buildExportSheet(wb, "Loan Active",               activeList,    from, to);
+            buildExportSheet(wb, "Same Month Cancellation",   sameMonthList, from, to);
+            buildExportSheet(wb, "Old Month Cancellation",    oldMonthList,  from, to);
 
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        wb.write(out);
-        wb.close();
-        return out.toByteArray();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            wb.write(out);
+            return out.toByteArray();
+        } finally {
+            wb.dispose(); // delete the backing temp files
+            wb.close();
+        }
     }
 
-    private void buildExportSheet(XSSFWorkbook wb, String sheetName,
+    private void buildExportSheet(SXSSFWorkbook wb, String sheetName,
                                    List<DisbursalRecord> records,
                                    LocalDate from, LocalDate to) {
-        XSSFSheet ws = wb.createSheet(sheetName);
+        Sheet ws = wb.createSheet(sheetName);
         CellStyle hdrSt = hdrStyle(wb);
         CellStyle numSt = numStyle(wb);
         CellStyle txtSt = textStyle(wb);
@@ -665,9 +672,9 @@ public class DisbursalServiceImpl implements DisbursalService {
     private void setT(Row r,int col,String v,CellStyle s){Cell c=r.createCell(col);c.setCellValue(v!=null?v:"");c.setCellStyle(s);}
     private void setN(Row r,int col,BigDecimal v,CellStyle s){Cell c=r.createCell(col);c.setCellValue(v!=null?v.doubleValue():0);c.setCellStyle(s);}
     private CellStyle titleStyle(XSSFWorkbook wb){CellStyle s=wb.createCellStyle();XSSFFont f=wb.createFont();f.setBold(true);f.setFontHeightInPoints((short)13);s.setFont(f);s.setAlignment(HorizontalAlignment.CENTER);return s;}
-    private CellStyle hdrStyle(XSSFWorkbook wb){CellStyle s=wb.createCellStyle();XSSFFont f=wb.createFont();f.setBold(true);f.setColor(new XSSFColor(new byte[]{(byte)255,(byte)255,(byte)255},null));s.setFont(f);s.setFillForegroundColor(new XSSFColor(new byte[]{(byte)31,(byte)63,(byte)100},null));s.setFillPattern(FillPatternType.SOLID_FOREGROUND);s.setAlignment(HorizontalAlignment.CENTER);return s;}
-    private CellStyle numStyle(XSSFWorkbook wb){CellStyle s=wb.createCellStyle();s.setDataFormat(wb.createDataFormat().getFormat("#,##0.00"));s.setAlignment(HorizontalAlignment.RIGHT);return s;}
-    private CellStyle textStyle(XSSFWorkbook wb){CellStyle s=wb.createCellStyle();s.setVerticalAlignment(VerticalAlignment.CENTER);return s;}
+    private CellStyle hdrStyle(Workbook wb){CellStyle s=wb.createCellStyle();XSSFFont f=(XSSFFont) wb.createFont();f.setBold(true);f.setColor(new XSSFColor(new byte[]{(byte)255,(byte)255,(byte)255},null));s.setFont(f);s.setFillForegroundColor(new XSSFColor(new byte[]{(byte)31,(byte)63,(byte)100},null));s.setFillPattern(FillPatternType.SOLID_FOREGROUND);s.setAlignment(HorizontalAlignment.CENTER);return s;}
+    private CellStyle numStyle(Workbook wb){CellStyle s=wb.createCellStyle();s.setDataFormat(wb.createDataFormat().getFormat("#,##0.00"));s.setAlignment(HorizontalAlignment.RIGHT);return s;}
+    private CellStyle textStyle(Workbook wb){CellStyle s=wb.createCellStyle();s.setVerticalAlignment(VerticalAlignment.CENTER);return s;}
     private CellStyle colorRow(XSSFWorkbook wb,String hex){CellStyle s=wb.createCellStyle();byte[] rgb=new byte[]{(byte)Integer.parseInt(hex.substring(0,2),16),(byte)Integer.parseInt(hex.substring(2,4),16),(byte)Integer.parseInt(hex.substring(4,6),16)};s.setFillForegroundColor(new XSSFColor(rgb,null));s.setFillPattern(FillPatternType.SOLID_FOREGROUND);return s;}
 
     @Override

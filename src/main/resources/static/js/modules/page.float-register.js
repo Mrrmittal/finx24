@@ -90,11 +90,17 @@ Router.register('float-register', function(panel) {
       '📥 Download Float Register' +
       '</div>' +
       '<div style="font-size:12px;color:#5A6E88;margin-bottom:18px">' +
-      'Select a month to generate the Float Register Excel with formula-based summary.' +
+      'Select a month, or a From–To period, to generate the Float Register Excel with formula-based summary.' +
+      '</div>' +
+      '<div style="margin-bottom:12px">' +
+      '<div style="font-size:11px;font-weight:600;color:#0B1F3A;margin-bottom:6px">Period From</div>' +
+      '<select id="fl-export-month-sel" class="form-input" style="width:100%"></select>' +
       '</div>' +
       '<div style="margin-bottom:16px">' +
-      '<div style="font-size:11px;font-weight:600;color:#0B1F3A;margin-bottom:6px">Select Month</div>' +
-      '<input type="month" id="fl-export-month-sel" class="form-input" style="width:100%">' +
+      '<div style="font-size:11px;font-weight:600;color:#0B1F3A;margin-bottom:6px">' +
+      'Period To <span style="font-weight:400;color:#9AA5B4">(optional — leave blank for a single month)</span>' +
+      '</div>' +
+      '<select id="fl-export-month-to-sel" class="form-input" style="width:100%"></select>' +
       '</div>' +
       '<div style="display:flex;gap:10px;justify-content:flex-end">' +
       '<button id="fl-export-cancel-btn" style="padding:8px 20px;font-size:12px;' +
@@ -249,8 +255,10 @@ Router.register('float-register', function(panel) {
     var titleEl = document.getElementById('fl-export-modal-title');
     if (titleEl) titleEl.textContent = '📥 Download MI Float Register';
 
-    var sel = document.getElementById('fl-export-month-sel');
-    sel.innerHTML = '<option value="">— Loading months... —</option>';
+    var sel   = document.getElementById('fl-export-month-sel');
+    var selTo = document.getElementById('fl-export-month-to-sel');
+    sel.innerHTML   = '<option value="">— Loading months... —</option>';
+    selTo.innerHTML = '<option value="">— Loading months... —</option>';
 
     // Load months from TATA AIG (most data) as reference for available months
     // User can also type a month manually
@@ -263,14 +271,18 @@ Router.register('float-register', function(panel) {
         if (res2 && res2.data && res2.data.length > months.length) months = res2.data;
       }
       if (months.length) {
-        sel.innerHTML = '<option value="">— Select Month —</option>'
-            + months.map(function(m){return '<option value="'+m+'">'+m+'</option>';}).join('');
+        var opts = months.map(function(m){return '<option value="'+m+'">'+m+'</option>';}).join('');
+        sel.innerHTML = '<option value="">— Select Month —</option>' + opts;
         sel.value = months[months.length-1];  // Default: latest month
+        selTo.innerHTML = '<option value="">— Same as Period From (single month) —</option>' + opts;
+        selTo.value = '';  // Default: single-month export, same as before
       } else {
-        sel.innerHTML = '<option value="">— No data uploaded yet —</option>';
+        sel.innerHTML   = '<option value="">— No data uploaded yet —</option>';
+        selTo.innerHTML = '<option value="">— No data uploaded yet —</option>';
       }
     } catch(e) {
-      sel.innerHTML = '<option value="">— Error loading months —</option>';
+      sel.innerHTML   = '<option value="">— Error loading months —</option>';
+      selTo.innerHTML = '<option value="">— Error loading months —</option>';
     }
 
     document.getElementById('fl-export-status').textContent = '';
@@ -282,15 +294,23 @@ Router.register('float-register', function(panel) {
   }
 
   async function _downloadRegister() {
-    var rawMonth = document.getElementById('fl-export-month-sel').value;
-    // Convert 'YYYY-MM' → "Apr'26" format
-    var MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    var month = rawMonth ? MO[parseInt(rawMonth.split('-')[1])-1]+"'"+String(parseInt(rawMonth.split('-')[0])%100).padStart(2,'0') : '';
+    // Options are populated with the exact "Apr'25"-style month labels the
+    // backend already understands — no format conversion needed.
+    var fromMonth = document.getElementById('fl-export-month-sel').value;
+    var toMonth   = document.getElementById('fl-export-month-to-sel').value || fromMonth;
     var status = document.getElementById('fl-export-status');
-    if (!month) {
-      status.textContent = '⚠️ Please select a month first.';
+    if (!fromMonth) {
+      status.textContent = '⚠️ Please select a Period From month first.';
       return;
     }
+    if (monthOrder(toMonth) < monthOrder(fromMonth)) {
+      status.textContent = '⚠️ Period To must be the same as, or after, Period From.';
+      return;
+    }
+    var isRange = toMonth !== fromMonth;
+    var rangeLabel = isRange ? (fromMonth + ' to ' + toMonth) : fromMonth;
+    var fileTag = isRange ? (fromMonth.replace("'","") + '_to_' + toMonth.replace("'","")) : fromMonth.replace("'","");
+
     var btn = document.getElementById('fl-export-download-btn');
     btn.disabled = true;
     btn.textContent = '⏳ Generating...';
@@ -300,10 +320,9 @@ Router.register('float-register', function(panel) {
           ? 'http://localhost:8080/api'
           : window.location.origin + '/api';
       var token = localStorage.getItem('finx24_jwt') || '';
-      var resp = await fetch(
-          base + '/float/export?category=MI&month=' + encodeURIComponent(month),
-          { headers: { 'Authorization': 'Bearer ' + token } }
-      );
+      var url = base + '/float/export?category=MI&month=' + encodeURIComponent(fromMonth)
+          + (isRange ? '&toMonth=' + encodeURIComponent(toMonth) : '');
+      var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
       if (!resp.ok) {
         var msg = 'Export failed: ' + resp.status;
         try { var j = await resp.json(); msg = j.message || msg; } catch(e2){}
@@ -312,12 +331,12 @@ Router.register('float-register', function(panel) {
       var blob = await resp.blob();
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'MI_Float_Register_' + month.replace("'","") + '.xlsx';
+      a.download = 'MI_Float_Register_' + fileTag + '.xlsx';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
-      status.textContent = '✅ Downloaded: MI_Float_Register_' + month.replace("'","") + '.xlsx';
+      status.textContent = '✅ Downloaded: MI_Float_Register_' + fileTag + '.xlsx (' + rangeLabel + ')';
       setTimeout(_closeExportModal, 2000);
     } catch(e) {
       status.textContent = '❌ ' + e.message;

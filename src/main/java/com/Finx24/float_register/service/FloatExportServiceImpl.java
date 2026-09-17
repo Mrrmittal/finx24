@@ -137,31 +137,36 @@ public class FloatExportServiceImpl implements FloatExportService {
 
     // ── MAIN ───────────────────────────────────────────────────────
     @Override
-    public byte[] generateMonthReport(String category, String month) throws Exception {
+    public byte[] generateReport(String category, String fromMonth, String toMonth) throws Exception {
         boolean isLI    = "LI".equalsIgnoreCase(category);
         String[][] pArr = isLI ? LI_PARTNERS : MI_PARTNERS;
         String parentGl = isLI ? PARENT_GL_LI : PARENT_GL_MI;
         String title    = isLI ? "LI Float Register" : "MI Float Register";
 
+        String to = (toMonth == null || toMonth.isBlank()) ? fromMonth : toMonth;
+        String periodDisplay = fromMonth.equals(to)
+                ? ("Month: " + fromMonth)
+                : ("Period: " + fromMonth + " – " + to);
+
         XSSFWorkbook wb = new XSSFWorkbook();
 
-        // Compute opening balance for each partner for selected month (from DB)
+        // Compute opening balance for each partner as of the start of fromMonth
         Map<String, Double> computedOpenings = new LinkedHashMap<>();
         for (String[] p : pArr) {
-            double ob = computeOpeningForMonth(p[0], month);
+            double ob = computeOpeningForMonth(p[0], fromMonth);
             computedOpenings.put(p[0], ob);
-            log.info("[Export] {} opening for {}: {}", p[1], month, ob);
+            log.info("[Export] {} opening for {}: {}", p[1], fromMonth, ob);
         }
 
         // Build partner sheets first (summary will formula-ref them)
         for (String[] p : pArr) {
-            List<? extends FloatRecord> rows = fetchByMonth(p[0], month);
-            buildPartnerSheet(wb, p[3], p[0], p[2], month, parentGl, rows);
-            log.info("[Export] {} {} → {} rows", p[1], month, rows.size());
+            List<? extends FloatRecord> rows = fetchByMonthRange(p[0], fromMonth, to);
+            buildPartnerSheet(wb, p[3], p[0], p[2], periodDisplay, parentGl, rows);
+            log.info("[Export] {} {} → {} rows", p[1], periodDisplay, rows.size());
         }
 
         // Build summary with correct opening balances
-        buildSummarySheet(wb, pArr, title, month, parentGl, computedOpenings);
+        buildSummarySheet(wb, pArr, title, periodDisplay, parentGl, computedOpenings, fromMonth, to);
         wb.setSheetOrder("Float Summary", 0);
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -172,8 +177,9 @@ public class FloatExportServiceImpl implements FloatExportService {
 
     // ── Summary sheet ──────────────────────────────────────────────
     private void buildSummarySheet(XSSFWorkbook wb, String[][] pArr,
-                                   String title, String month, String parentGl,
-                                   Map<String, Double> computedOpenings) {
+                                   String title, String periodDisplay, String parentGl,
+                                   Map<String, Double> computedOpenings,
+                                   String fromMonth, String toMonth) {
         Sheet ws = wb.createSheet("Float Summary");
         ws.createFreezePane(1, 4);
         ws.setColumnWidth(0, 7500);
@@ -189,7 +195,7 @@ public class FloatExportServiceImpl implements FloatExportService {
         // Row 0 — Title
         Row r0 = ws.createRow(0); r0.setHeightInPoints(28);
         Cell tc = r0.createCell(0);
-        tc.setCellValue("FINX24  ·  " + title + "  ·  Month: " + month
+        tc.setCellValue("FINX24  ·  " + title + "  ·  " + periodDisplay
                 + "  ·  Parent GL: " + parentGl);
         tc.setCellStyle(titleSt);
         ws.addMergedRegion(new CellRangeAddress(0, 0, 0, pArr.length));
@@ -207,7 +213,7 @@ public class FloatExportServiceImpl implements FloatExportService {
         // Summary rows 3-8
         record SummRow(String label, String metric, CellStyle lblSt, CellStyle numSt) {}
         List<SummRow> summRows = List.of(
-                new SummRow("Opening Balance (" + getPrevMonth(month) + ")",
+                new SummRow("Opening Balance (" + getPrevMonth(fromMonth) + ")",
                         "openingBal", lblBold, numStyle(wb,NAVY,WHITE,true)),
                 new SummRow("Float Top-Up",
                         "topUp",      lblNorm, numStyle(wb,LTGRAY,GREEN,false)),
@@ -217,7 +223,7 @@ public class FloatExportServiceImpl implements FloatExportService {
                         "totalDebit",  lblNorm,numStyle(wb,LTGRAY,RED,false)),
                 new SummRow("Expense  (Debit − Cancellation Rcvd)",
                         "expense",     lblNorm,numStyle(wb,LTGRAY,"C8992A",false)),
-                new SummRow("Closing Balance (End of " + month + ")",
+                new SummRow("Closing Balance (End of " + toMonth + ")",
                         "closingBal",  lblBold,numStyle(wb,NAVY,WHITE,true))
         );
 
@@ -250,7 +256,7 @@ public class FloatExportServiceImpl implements FloatExportService {
 
     // ── Partner detail sheet ───────────────────────────────────────
     private void buildPartnerSheet(XSSFWorkbook wb, String sname, String code,
-                                   String gl, String month, String parentGl,
+                                   String gl, String periodDisplay, String parentGl,
                                    List<? extends FloatRecord> rows) {
         Sheet ws = wb.createSheet(sname);
         ws.createFreezePane(0, 2);
@@ -266,7 +272,7 @@ public class FloatExportServiceImpl implements FloatExportService {
         // Title
         Row r0 = ws.createRow(0); r0.setHeightInPoints(22);
         Cell tc = r0.createCell(0);
-        tc.setCellValue(sname + "  ·  GL: " + gl + "  ·  Month: " + month
+        tc.setCellValue(sname + "  ·  GL: " + gl + "  ·  " + periodDisplay
                 + "  ·  Parent GL: " + parentGl);
         tc.setCellStyle(titleSt);
         ws.addMergedRegion(new CellRangeAddress(0, 0, 0, 8));
@@ -457,6 +463,30 @@ public class FloatExportServiceImpl implements FloatExportService {
             case "Bajaj_EW"               -> bajajEwRepo.findByMonthLabelOrderByTransDateAsc(month);
             default -> List.of();
         };
+    }
+
+    // Concatenates every month's rows (chronologically) between fromMonth and
+    // toMonth inclusive, using each partner's own set of populated months —
+    // so a range with gaps (no data in some months) still works correctly.
+    private List<? extends FloatRecord> fetchByMonthRange(String code, String fromMonth, String toMonth) {
+        if (fromMonth.equals(toMonth)) return fetchByMonth(code, fromMonth);
+
+        List<Object[]> allMonths = fetchMonthSummary(code);
+        List<String> monthsInRange = new ArrayList<>();
+        for (Object[] row : allMonths) {
+            String mo = String.valueOf(row[0]);
+            int order = monthOrder(mo);
+            if (order >= monthOrder(fromMonth) && order <= monthOrder(toMonth)) {
+                monthsInRange.add(mo);
+            }
+        }
+        monthsInRange.sort((a, b) -> monthOrder(a) - monthOrder(b));
+
+        List<FloatRecord> combined = new ArrayList<>();
+        for (String mo : monthsInRange) {
+            combined.addAll(fetchByMonth(code, mo));
+        }
+        return combined;
     }
 
     private String getPrevMonth(String month) {

@@ -890,11 +890,22 @@ public class FloatServiceImpl implements FloatService {
             case STRING  -> c.getStringCellValue().trim();
             case NUMERIC -> DateUtil.isCellDateFormatted(c)
                 ? c.getLocalDateTimeCellValue().toLocalDate().toString()
-                : String.valueOf(c.getNumericCellValue());
-            case FORMULA -> { try { yield String.valueOf(c.getNumericCellValue()); }
+                : plainNumber(c.getNumericCellValue());
+            case FORMULA -> { try { yield plainNumber(c.getNumericCellValue()); }
                               catch(Exception e){ yield c.getStringCellValue().trim(); } }
             default -> "";
         }; } catch(Exception e) { return ""; }
+    }
+
+    // Excel policy/registration numbers are often stored as NUMERIC cells;
+    // String.valueOf(double) flips to scientific notation (e.g. "6.206114026E9")
+    // for values above ~1e7, so format as plain digits instead.
+    private String plainNumber(double v) {
+        if (Double.isNaN(v) || Double.isInfinite(v)) return String.valueOf(v);
+        BigDecimal bd = BigDecimal.valueOf(v);
+        return v == Math.floor(v)
+            ? bd.toBigInteger().toString()
+            : bd.stripTrailingZeros().toPlainString();
     }
 
     private double numCell(Cell c) {
